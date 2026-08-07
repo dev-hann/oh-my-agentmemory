@@ -11,7 +11,7 @@ this plugin forces the agent to **write** to memory proactively.
 [![opencode](https://img.shields.io/badge/opencode-%E2%89%A51.14-6E56CF.svg)](https://opencode.ai)
 [![agentmemory](https://img.shields.io/badge/agentmemory-%E2%89%A50.9.28-FF6B35.svg)](https://github.com/rohitg00/agentmemory)
 [![tests](https://img.shields.io/badge/tests-35%20passing-22C55E.svg)](./tests)
-[![phases](https://img.shields.io/badge/phases-5%20hooks-9333EA.svg)](#architecture)
+[![phases](https://img.shields.io/badge/hooks-5-9333EA.svg)](#how-it-works)
 
 [English](./README.md) · [한국어](./README.ko.md)
 
@@ -48,16 +48,19 @@ memory hygiene.
 | `memory_crystallize` calls | 0 | **occasional** (suggested when ≥3 actions done) |
 | "remember this" actually saved | ~30% | **~90%** (keyword detection → directive) |
 
-Numbers are illustrative — actual lift depends on session shape. Phase 5
-auto-lesson is the largest contributor; phase 1 directive is the largest
-enabler of explicit `memory_save` calls.
+Numbers are illustrative — actual lift depends on session shape. The
+`learning` hook (auto-lesson) is the largest contributor; the
+`enforcement` directive is the largest enabler of explicit `memory_save`
+calls.
 
 ---
 
 ## How it works
 
-Five hooks, each owning one slice of the write side. All coexist with
-`agentmemory-capture.ts` (which keeps doing passive observation).
+Five hooks, each owning one slice of the write side. Each has a short
+**purpose name** used in `OH_AM_DISABLE` and a corresponding opencode
+hook. All coexist with `agentmemory-capture.ts` (which keeps doing
+passive observation).
 
 ```mermaid
 flowchart LR
@@ -70,11 +73,11 @@ flowchart LR
     end
 
     subgraph OH[oh-my-agentmemory]
-        P2[Phase 2<br/>bootstrap empty slots]
-        P3[Phase 3<br/>keyword detection]
-        P1[Phase 1<br/>per-turn directive]
-        P4[Phase 4<br/>crystal suggestion]
-        P5[Phase 5<br/>auto-lesson from history]
+        INIT[init<br/>bootstrap empty slots]
+        INTENT[intent<br/>keyword detection]
+        ENF[enforcement<br/>per-turn directive]
+        ARCH[archive<br/>crystal suggestion]
+        LEARN[learning<br/>auto-lesson from history]
     end
 
     subgraph AM[agentmemory HTTP API]
@@ -83,23 +86,23 @@ flowchart LR
         LESSON[/lesson/save]
     end
 
-    SC --> P2 --> SLOTS
-    CM --> P3 --> OBSERVE
-    ST --> P1
-    SI --> P4 --> OBSERVE
-    FE --> P5 --> LESSON
-    P3 -.queued intent.-> P1
-    P4 -.flag.-> P1
-    P2 -.cache invalidate.-> P1
+    SC --> INIT --> SLOTS
+    CM --> INTENT --> OBSERVE
+    ST --> ENF
+    SI --> ARCH --> OBSERVE
+    FE --> LEARN --> LESSON
+    INTENT -.queued intent.-> ENF
+    ARCH -.flag.-> ENF
+    INIT -.cache invalidate.-> ENF
 ```
 
-| Phase | Hook | What it does |
+| Hook (opencode event) | Purpose | What it does |
 |---|---|---|
-| **1** | `experimental.chat.system.transform` | Pushes a policy directive into `output.system[]` every turn. Header + recall rules + write rules + crystal rules + state flags (empty slots, pending keywords, done-action count). Cached per-session to keep the hot path HTTP-free. |
-| **2** | `event: session.created` | Lists slots, finds empties among the four core pinned slots, fills them with templates derived from cwd (project map). Logs a `oh_am_bootstrap` observation. |
-| **3** | `chat.message` | Matches user text against bilingual patterns: "remember", "save this", "don't forget", "기억해", "저장해", "잊어". Queues matches for the next directive. |
-| **4** | `event: session.status` (idle) | When ≥3 actions are done, records a `oh_am_crystal_candidate` observation. The next directive surfaces the candidate IDs to the LLM. |
-| **5** | `event: file.edited` | Fetches the file's history, looks for error signals (`error`, `fail`, `bug`, `에러`, `실패`, …), skips if edit is tiny or no error pattern, dedupes against `lesson_recall`, then calls `lesson/save`. 5-min per-file history cache + 60-second per-file debounce. |
+| `experimental.chat.system.transform` | **enforcement** | Pushes a policy directive into `output.system[]` every turn. Header + recall rules + write rules + crystal rules + state flags (empty slots, pending keywords, done-action count). Cached per-session to keep the hot path HTTP-free. |
+| `event: session.created` | **init** | Lists slots, finds empties among the four core pinned slots, fills them with templates derived from cwd (project map). Logs a `oh_am_bootstrap` observation. |
+| `chat.message` | **intent** | Matches user text against bilingual patterns: "remember", "save this", "don't forget", "기억해", "저장해", "잊어". Queues matches for the next directive. |
+| `event: session.status` (idle) | **archive** | When ≥3 actions are done, records a `oh_am_crystal_candidate` observation. The next directive surfaces the candidate IDs to the LLM. |
+| `event: file.edited` | **learning** | Fetches the file's history, looks for error signals (`error`, `fail`, `bug`, `에러`, `실패`, …), skips if edit is tiny or no error pattern, dedupes against `lesson_recall`, then calls `lesson/save`. 5-min per-file history cache + 60-second per-file debounce. |
 
 ### Sample directive (what the LLM sees every turn)
 
@@ -224,9 +227,9 @@ All optional. Read from environment variables by the opencode adapter.
 | `AGENTMEMORY_URL` | `http://localhost:3111` | agentmemory server base URL |
 | `AGENTMEMORY_SECRET` | `""` | Bearer token if auth enabled on server |
 | `OH_AM_DEBUG` | `0` | Set to `1` for verbose stderr logging |
-| `OH_AM_DISABLE` | `""` | Comma-list of phases to disable, e.g. `phase3,phase5` |
+| `OH_AM_DISABLE` | `""` | Comma-list of purpose names to disable: `enforcement`, `init`, `intent`, `archive`, `learning` (e.g. `intent,learning`) |
 
-Example: `OH_AM_DEBUG=1 OH_AM_DISABLE=phase5 opencode`
+Example: `OH_AM_DEBUG=1 OH_AM_DISABLE=learning opencode`
 
 ---
 
@@ -251,11 +254,11 @@ oh-my-agentmemory/
 │           ├── plugin.ts           # single entry, registers all hooks
 │           ├── client.ts           # agentmemory HTTP wrapper
 │           ├── hooks/
-│           │   ├── system-transform.ts   # phase 1
-│           │   ├── session-created.ts    # phase 2
-│           │   ├── chat-message.ts       # phase 3
-│           │   ├── session-idle.ts       # phase 4
-│           │   └── file-edited.ts        # phase 5
+│           │   ├── system-transform.ts   # enforcement
+│           │   ├── session-created.ts    # init
+│           │   ├── chat-message.ts       # intent
+│           │   ├── session-idle.ts       # archive
+│           │   └── file-edited.ts        # learning
 │           └── commands/
 │               ├── am-recall.md
 │               ├── am-save.md
@@ -344,17 +347,17 @@ Both plugins can coexist — they push to different memory systems.
 1. Run `/am-bootstrap` to force re-bootstrap and see proposed content
 2. Check `OH_AM_DEBUG=1` for `[oh-am] bootstrap filled N/N slots`
 3. If detection picks the wrong project, add your cwd to `PROJECT_MAP` in `src/core/bootstrap.ts`
-4. Phase 2 may be disabled via `OH_AM_DISABLE=phase2`
+4. The `init` hook may be disabled via `OH_AM_DISABLE=init`
 
 </details>
 
 <details>
-<summary><b>Too many lessons being saved (Phase 5 noise)</b></summary>
+<summary><b>Too many lessons being saved (learning noise)</b></summary>
 
-Phase 5 is conservative by default — it requires both an error signal in
+The `learning` hook is conservative by default — it requires both an error signal in
 file history AND a meaningful edit size. If still too noisy:
 
-1. Disable temporarily: `OH_AM_DISABLE=phase5`
+1. Disable temporarily: `OH_AM_DISABLE=learning`
 2. Tune filters in `src/core/lessons.ts`:
    - Raise `MIN_EDIT_LINES` (default 5)
    - Add exclude patterns to skip test files or generated code
@@ -398,12 +401,12 @@ Adapter tests require a running agentmemory server.
 
 ### Roadmap
 
-- **Phase 6** — `using-agentmemory` opencode Skill (auto-loaded by opencode
+- **Skill layer** — `using-agentmemory` opencode Skill (auto-loaded by opencode
   when relevant, stronger than directive)
-- **Phase 7** — `adapters/claude-code/` (`.claude/settings.json` hook scripts
+- **Claude Code adapter** — `adapters/claude-code/` (`.claude/settings.json` hook scripts
   that invoke `core/`)
-- **Phase 8** — `adapters/codex/` (Codex hook format)
-- **Phase 9** — npm publish + `bunx oh-my-agentmemory install --agent X` CLI
+- **Codex adapter** — `adapters/codex/` (Codex hook format)
+- **npm publish** — `bunx oh-my-agentmemory install --agent X` CLI installer
 
 Contributions welcome. Open an issue first to discuss scope.
 

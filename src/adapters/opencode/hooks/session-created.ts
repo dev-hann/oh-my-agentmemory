@@ -1,5 +1,5 @@
 /**
- * Phase 2 — bootstrap empty pinned slots on session.created.
+ * init — bootstrap empty pinned slots on session.created.
  *
  * Triggered when a new opencode session starts. Reads the slot list,
  * finds empties among the four core slots (persona / project_context /
@@ -30,7 +30,7 @@ export async function onSessionCreated(params: {
   project: string | null;
 }): Promise<void> {
   const disabled = parseDisabledPhases();
-  if (disabled.has("phase2")) return;
+  if (disabled.has("init")) return;
 
   // Drop system-transform caches so the new session reloads slot state.
   invalidateSessionContext(params.sessionId);

@@ -1,5 +1,5 @@
 /**
- * Phase 4 — crystal suggestion on session.idle.
+ * archive — crystal suggestion on session.idle.
  *
  * When session goes idle and ≥3 done actions exist, record a hint in
  * session-scoped state. The next system-transform directive will surface
@@ -38,7 +38,7 @@ export async function onSessionStatus(
   properties: SessionStatusProperties,
 ): Promise<void> {
   const disabled = parseDisabledPhases();
-  if (disabled.has("phase4")) return;
+  if (disabled.has("archive")) return;
 
   const status = properties.status;
   if (!status || status.type !== "idle") return;

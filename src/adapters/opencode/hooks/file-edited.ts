@@ -1,5 +1,5 @@
 /**
- * Phase 5 — auto lesson capture on file.edited.
+ * learning — auto lesson capture on file.edited.
  *
  * When a file edit is committed, fetch the file's history from agentmemory,
  * build a LessonCandidate via core/lessons.ts, dedupe against existing
@@ -76,7 +76,7 @@ export async function onFileEdited(params: {
   deletions?: number;
 }): Promise<void> {
   const disabled = parseDisabledPhases();
-  if (disabled.has("phase5")) return;
+  if (disabled.has("learning")) return;
 
   const { sessionId, project, filePath } = params;
   if (!filePath) return;

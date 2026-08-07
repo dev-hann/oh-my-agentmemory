@@ -80,10 +80,10 @@ describe("buildDirective", () => {
   it("lists disabled phases when present", () => {
     const out = buildDirective(
       baseCtx({
-        disabledPhases: new Set<PhaseId>(["phase3", "phase5"]),
+        disabledPhases: new Set<PhaseId>(["intent", "learning"]),
       }),
     );
-    expect(out).toContain("[DEBUG] Disabled phases: phase3, phase5");
+    expect(out).toContain("[DEBUG] Disabled phases: intent, learning");
   });
 });
 

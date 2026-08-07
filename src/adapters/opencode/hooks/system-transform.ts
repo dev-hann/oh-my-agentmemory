@@ -1,5 +1,5 @@
 /**
- * Phase 1 — per-turn directive injection.
+ * enforcement — per-turn directive injection.
  *
  * Reads agentmemory state (slots, done actions) once per session, caches,
  * then on every system-transform call pushes a directive string built by
@@ -33,11 +33,11 @@ function parseDisabledPhases(): Set<PhaseId> {
   const raw = process.env.OH_AM_DISABLE ?? "";
   if (!raw) return new Set();
   const valid: PhaseId[] = [
-    "phase1",
-    "phase2",
-    "phase3",
-    "phase4",
-    "phase5",
+    "enforcement",
+    "init",
+    "intent",
+    "archive",
+    "learning",
   ];
   const out = new Set<PhaseId>();
   for (const part of raw.split(/[,\s]+/)) {
@@ -107,7 +107,7 @@ export const systemTransformHook: NonNullable<
   if (!output || !Array.isArray(output.system)) return;
 
   const disabled = parseDisabledPhases();
-  if (disabled.has("phase1")) return;
+  if (disabled.has("enforcement")) return;
 
   const state = await loadSessionContext(sessionId, null);
   // Drain whatever the chat-message hook queued for this turn.

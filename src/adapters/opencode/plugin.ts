@@ -4,13 +4,13 @@
  * Registers five hooks alongside the existing agentmemory-capture.ts plugin
  * (which keeps doing passive observation). This plugin owns the WRITE side:
  *
- *   phase 1 — experimental.chat.system.transform → per-turn directive push
- *   phase 2 — event: session.created             → bootstrap empty slots
- *   phase 3 — chat.message                       → keyword detection
- *   phase 4 — event: session.status(idle)        → crystal suggestion
- *   phase 5 — event: file.edited                 → auto lesson capture
+ *   enforcement — experimental.chat.system.transform → per-turn directive push
+ *   init        — event: session.created             → bootstrap empty slots
+ *   intent      — chat.message                       → keyword detection
+ *   archive     — event: session.status(idle)        → crystal suggestion
+ *   learning    — event: file.edited                 → auto lesson capture
  *
- * Hooks are independently disable-able via OH_AM_DISABLE=phase3,phase5 etc.
+ * Hooks are independently disable-able via OH_AM_DISABLE=intent,learning etc.
  */
 
 import type { Plugin } from "@opencode-ai/plugin";
@@ -79,10 +79,10 @@ export const OhMyAgentmemoryPlugin: Plugin = async (ctx) => {
     null;
 
   return {
-    // ── Phase 1: per-turn directive injection ───────────────────────────────
+    // ── enforcement: per-turn directive injection ─────────────────────────
     "experimental.chat.system.transform": systemTransformHook,
 
-    // ── Phase 3: keyword detection on user prompts ─────────────────────────
+    // ── intent: keyword detection on user prompts ─────────────────────────
     "chat.message": async (input, output) => {
       await onChatMessage(
         input as { sessionID?: string; sessionId?: string; project?: string | null },
@@ -90,7 +90,7 @@ export const OhMyAgentmemoryPlugin: Plugin = async (ctx) => {
       );
     },
 
-    // ── Phase 2 / 4 / 5: session + file lifecycle events ───────────────────
+    // ── init / archive / learning: session + file lifecycle events ────────
     event: async ({ event }: { event?: OpencodeEvent } = {}) => {
       if (!event) return;
       const type = event.type;

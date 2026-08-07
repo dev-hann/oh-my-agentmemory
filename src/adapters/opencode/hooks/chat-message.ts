@@ -1,5 +1,5 @@
 /**
- * Phase 3 — chat-message keyword detection.
+ * intent — chat-message keyword detection.
  *
  * Scans user messages for save/forget/recall intents and queues them for
  * the next system-transform directive (see client.pushSessionKeywords).
@@ -38,7 +38,7 @@ export async function onChatMessage(
   output: ChatMessageOutput,
 ): Promise<void> {
   const disabled = parseDisabledPhases();
-  if (disabled.has("phase3")) return;
+  if (disabled.has("intent")) return;
 
   const sessionId = input.sessionID ?? input.sessionId ?? null;
   if (!sessionId || !output?.parts) return;

@@ -11,7 +11,7 @@
 [![opencode](https://img.shields.io/badge/opencode-%E2%89%A51.14-6E56CF.svg)](https://opencode.ai)
 [![agentmemory](https://img.shields.io/badge/agentmemory-%E2%89%A50.9.28-FF6B35.svg)](https://github.com/rohitg00/agentmemory)
 [![tests](https://img.shields.io/badge/tests-35%20passing-22C55E.svg)](./tests)
-[![phases](https://img.shields.io/badge/phases-5%20hooks-9333EA.svg)](#아키텍처)
+[![phases](https://img.shields.io/badge/hooks-5-9333EA.svg)](#어떻게-동작하나)
 
 [English](./README.md) · 한국어
 
@@ -42,21 +42,22 @@ agentmemory는 **54개의 MCP 도구**와 튼튼한 자동 캡처 플러그인
 
 | 지표 (세션당) | oh-my-agentmemory 없음 | oh-my-agentmemory 있음 |
 |---|---|---|
-| 채워진 pinned slots | 4개 중 0개 | **4개 중 4개** (session.created에서 자동 부트스트랩) |
+| 채워진 pinned slots | 4개 중 0개 | **4개 중 4개** (session.created에서 자동 부트스트램) |
 | `memory_save` 호출 | 0 | **1–3** (매 턴 directive 강화) |
 | `memory_lesson_save` 호출 | 0 | **2–5** (파일 히스토리에서 자동 캡처) |
 | `memory_crystallize` 호출 | 0 | **가끔** (done 액션 ≥3일 때 제안) |
 | "이거 기억해" 실제 저장 | ~30% | **~90%** (키워드 감지 → directive) |
 
-수치는 예시입니다 — 실제 향상은 세션 형태에 따라 다릅니다. Phase 5 자동
-lesson이 가장 큰 기여자이며, phase 1 directive가 명시적 `memory_save` 호출의
-가장 큰 매개자입니다.
+수치는 예시입니다 — 실제 향상은 세션 형태에 따라 다릅니다. `learning` hook
+(자동 lesson)이 가장 큰 기여자이며, `enforcement` directive가 명시적
+`memory_save` 호출의 가장 큰 매개자입니다.
 
 ---
 
 ## 어떻게 동작하나
 
-다섯 개의 훅이 쓰기 쪽의 한 조각씩을 담당합니다. 모두 `agentmemory-capture.ts`와
+다섯 개의 훅이 쓰기 쪽의 한 조각씩을 담당합니다. 각각 짧은 **목적 이름**을
+가지며 `OH_AM_DISABLE`에서 사용됩니다. 모두 `agentmemory-capture.ts`와
 공존합니다 (capture.ts는 passive 관측을 계속 수행).
 
 ```mermaid
@@ -70,11 +71,11 @@ flowchart LR
     end
 
     subgraph OH[oh-my-agentmemory]
-        P2[Phase 2<br/>빈 slots 부트스트랩]
-        P3[Phase 3<br/>키워드 감지]
-        P1[Phase 1<br/>매 턴 directive]
-        P4[Phase 4<br/>crystal 제안]
-        P5[Phase 5<br/>히스토리 기반 자동 lesson]
+        INIT[init<br/>빈 slots 부트스트랩]
+        INTENT[intent<br/>키워드 감지]
+        ENF[enforcement<br/>매 턴 directive]
+        ARCH[archive<br/>crystal 제안]
+        LEARN[learning<br/>히스토리 기반 자동 lesson]
     end
 
     subgraph AM[agentmemory HTTP API]
@@ -83,23 +84,23 @@ flowchart LR
         LESSON[/lesson/save]
     end
 
-    SC --> P2 --> SLOTS
-    CM --> P3 --> OBSERVE
-    ST --> P1
-    SI --> P4 --> OBSERVE
-    FE --> P5 --> LESSON
-    P3 -.대기 중인 의도.-> P1
-    P4 -.플래그.-> P1
-    P2 -.캐시 무효화.-> P1
+    SC --> INIT --> SLOTS
+    CM --> INTENT --> OBSERVE
+    ST --> ENF
+    SI --> ARCH --> OBSERVE
+    FE --> LEARN --> LESSON
+    INTENT -.대기 중인 의도.-> ENF
+    ARCH -.플래그.-> ENF
+    INIT -.캐시 무효화.-> ENF
 ```
 
-| Phase | 훅 | 하는 일 |
+| 훅 (opencode 이벤트) | 목적 | 하는 일 |
 |---|---|---|
-| **1** | `experimental.chat.system.transform` | 매 턴 `output.system[]`에 정책 directive push. 헤더 + recall 규칙 + write 규칙 + crystal 규칙 + 상태 플래그(빈 slot, 대기 키워드, done 액션 수). 핫 패스는 HTTP-free를 위해 세션 단위로 캐싱. |
-| **2** | `event: session.created` | slot 목록을 조회해 네 개 핵심 pinned slot 중 빈 것을 찾고, cwd 기반 프로젝트 매핑으로 템플릿을 채웁니다. `oh_am_bootstrap` observation 기록. |
-| **3** | `chat.message` | 사용자 텍스트를 이중 언어 패턴으로 매칭: "remember", "save this", "don't forget", "기억해", "저장해", "잊어". 매칭을 다음 directive에 큐잉. |
-| **4** | `event: session.status` (idle) | done 액션이 ≥3개면 `oh_am_crystal_candidate` observation 기록. 다음 directive가 후보 ID를 LLM에 노출. |
-| **5** | `event: file.edited` | 파일 히스토리를 가져와 에러 신호(`error`, `fail`, `bug`, `에러`, `실패`, …)를 찾습니다. 편집이 너무 작거나 에러 패턴이 없으면 스킵, `lesson_recall`로 중복 확인 후 `lesson/save` 호출. 파일당 5분 히스토리 캐시 + 60초 디바운스. |
+| `experimental.chat.system.transform` | **enforcement** | 매 턴 `output.system[]`에 정책 directive push. 헤더 + recall 규칙 + write 규칙 + crystal 규칙 + 상태 플래그(빈 slot, 대기 키워드, done 액션 수). 핫 패스는 HTTP-free를 위해 세션 단위로 캐싱. |
+| `event: session.created` | **init** | slot 목록을 조회해 네 개 핵심 pinned slot 중 빈 것을 찾고, cwd 기반 프로젝트 매핑으로 템플릿을 채웁니다. `oh_am_bootstrap` observation 기록. |
+| `chat.message` | **intent** | 사용자 텍스트를 이중 언어 패턴으로 매칭: "remember", "save this", "don't forget", "기억해", "저장해", "잊어". 매칭을 다음 directive에 큐잉. |
+| `event: session.status` (idle) | **archive** | done 액션이 ≥3개면 `oh_am_crystal_candidate` observation 기록. 다음 directive가 후보 ID를 LLM에 노출. |
+| `event: file.edited` | **learning** | 파일 히스토리를 가져와 에러 신호(`error`, `fail`, `bug`, `에러`, `실패`, …)를 찾습니다. 편집이 너무 작거나 에러 패턴이 없으면 스킵, `lesson_recall`로 중복 확인 후 `lesson/save` 호출. 파일당 5분 히스토리 캐시 + 60초 디바운스. |
 
 ### directive 예시 (LLM이 매 턴 보는 것)
 
@@ -216,9 +217,9 @@ done
 | `AGENTMEMORY_URL` | `http://localhost:3111` | agentmemory 서버 기본 URL |
 | `AGENTMEMORY_SECRET` | `""` | 서버에서 인증 활성화 시 Bearer 토큰 |
 | `OH_AM_DEBUG` | `0` | `1`로 설정하면 stderr에 상세 로깅 |
-| `OH_AM_DISABLE` | `""` | 비활성화할 phase들의 콤마 목록, 예: `phase3,phase5` |
+| `OH_AM_DISABLE` | `""` | 비활성화할 목적 이름들의 콤마 목록: `enforcement`, `init`, `intent`, `archive`, `learning` (예: `intent,learning`) |
 
-예: `OH_AM_DEBUG=1 OH_AM_DISABLE=phase5 opencode`
+예: `OH_AM_DEBUG=1 OH_AM_DISABLE=learning opencode`
 
 ---
 
@@ -243,11 +244,11 @@ oh-my-agentmemory/
 │           ├── plugin.ts           # 단일 진입점, 모든 훅 등록
 │           ├── client.ts           # agentmemory HTTP 래퍼
 │           ├── hooks/
-│           │   ├── system-transform.ts   # phase 1
-│           │   ├── session-created.ts    # phase 2
-│           │   ├── chat-message.ts       # phase 3
-│           │   ├── session-idle.ts       # phase 4
-│           │   └── file-edited.ts        # phase 5
+│           │   ├── system-transform.ts   # enforcement
+│           │   ├── session-created.ts    # init
+│           │   ├── chat-message.ts       # intent
+│           │   ├── session-idle.ts       # archive
+│           │   └── file-edited.ts        # learning
 │           └── commands/
 │               ├── am-recall.md
 │               ├── am-save.md
@@ -335,17 +336,17 @@ oh-my-agentmemory는 다음 경우에 올바른 선택입니다:
 1. `/am-bootstrap`을 실행해 강제 재부트스트랩 및 제안 내용 확인
 2. `OH_AM_DEBUG=1`로 `[oh-am] bootstrap filled N/N slots` 로그 확인
 3. 감지가 잘못된 프로젝트를 고르면 `src/core/bootstrap.ts`의 `PROJECT_MAP`에 cwd 추가
-4. Phase 2가 `OH_AM_DISABLE=phase2`로 비활성화되어 있을 수 있음
+4. `init` hook이 `OH_AM_DISABLE=init`으로 비활성화되어 있을 수 있음
 
 </details>
 
 <details>
-<summary><b>lesson이 너무 많이 저장됨 (Phase 5 잡음)</b></summary>
+<summary><b>lesson이 너무 많이 저장됨 (learning 잡음)</b></summary>
 
-Phase 5는 기본적으로 보수적입니다 — 파일 히스토리의 에러 신호 AND 의미 있는
+`learning` hook은 기본적으로 보수적입니다 — 파일 히스토리의 에러 신호 AND 의미 있는
 편집 크기가 모두 필요합니다. 그래도 시끄러우면:
 
-1. 일시 비활성화: `OH_AM_DISABLE=phase5`
+1. 일시 비활성화: `OH_AM_DISABLE=learning`
 2. `src/core/lessons.ts`에서 필터 조정:
    - `MIN_EDIT_LINES` 올리기 (기본 5)
    - 테스트 파일이나 생성 코드를 스킵하는 제외 패턴 추가
@@ -389,12 +390,12 @@ bun run typecheck    # strict TS
 
 ### 로드맵
 
-- **Phase 6** — `using-agentmemory` opencode Skill (관련 있을 때 opencode가 자동
+- **Skill 계층** — `using-agentmemory` opencode Skill (관련 있을 때 opencode가 자동
   로드, directive보다 강제성 큼)
-- **Phase 7** — `adapters/claude-code/` (`.claude/settings.json` 훅 스크립트가
+- **Claude Code 어댑터** — `adapters/claude-code/` (`.claude/settings.json` 훅 스크립트가
   `core/`를 호출)
-- **Phase 8** — `adapters/codex/` (Codex 훅 포맷)
-- **Phase 9** — npm 게시 + `bunx oh-my-agentmemory install --agent X` CLI
+- **Codex 어댑터** — `adapters/codex/` (Codex 훅 포맷)
+- **npm 게시** — `bunx oh-my-agentmemory install --agent X` CLI 설치자
 
 기여 환영. 범위 논의를 위해 먼저 이슈를 여세요.
 

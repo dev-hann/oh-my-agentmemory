@@ -47,7 +47,7 @@ Required:
    commit messages (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`)
 5. Open a PR against `main`. Reference the issue it closes.
 
-## Adding a new phase
+## Adding a new hook
 
 If you're adding a new hook behavior:
 
@@ -56,8 +56,8 @@ If you're adding a new hook behavior:
 2. Add unit tests in `tests/core/`
 3. Wire the hook in `src/adapters/opencode/hooks/`
 4. Register it in `src/adapters/opencode/plugin.ts`
-5. Add a row to the phase table in both `README.md` and `README.ko.md`
-6. Add a `OH_AM_DISABLE=phaseN` knob by extending the `PhaseId` type and
+5. Add a row to the hook table in both `README.md` and `README.ko.md`
+6. Add a `OH_AM_DISABLE=<purpose>` knob by extending the `PhaseId` type and
    the parse function in each adapter hook
 7. Update `CHANGELOG.md` under `[Unreleased]`
 
@@ -70,7 +70,7 @@ shape of an adapter is:
 src/adapters/<agent>/
 ├── plugin.ts or hooks.json  # whatever the agent's plugin system expects
 ├── client.ts                # agent's I/O mechanism (HTTP / shell / IPC)
-└── hooks/                   # one file per phase
+└── hooks/                   # one file per purpose
 ```
 
 If you find yourself wanting to change `core/` to make an adapter work,

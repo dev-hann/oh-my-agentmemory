@@ -67,11 +67,11 @@ export interface DirectiveContext {
 }
 
 export type PhaseId =
-  | "phase1"
-  | "phase2"
-  | "phase3"
-  | "phase4"
-  | "phase5";
+  | "enforcement"
+  | "init"
+  | "intent"
+  | "archive"
+  | "learning";
 
 export interface FileHistoryEntry {
   sessionId: string;
