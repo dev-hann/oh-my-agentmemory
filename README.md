@@ -201,7 +201,21 @@ for f in am-recall am-save am-bootstrap am-status; do
 done
 ```
 
-### 6. Restart opencode
+### 6. (Optional) Create a config file
+
+Defaults work out of the box (localhost agentmemory, auto mode). For
+persistent settings — remote server, profiles, custom project map,
+policy overrides — create `~/.config/opencode/oh-am.jsonc`:
+
+```bash
+cp ~/Documents/oh-my-agentmemory/examples/oh-am.full.jsonc \
+   ~/.config/opencode/oh-am.jsonc
+# then edit to taste — every field is optional
+```
+
+See [Configuration](#configuration) for the full schema.
+
+### 7. Restart opencode
 
 Verify with `/am-status` — it should report pinned slots filled.
 
@@ -410,6 +424,10 @@ a running agentmemory server.
 | Reacts to "remember" / "기억해" | No | No | **Yes (keyword detection)** |
 | Auto-saves lessons from bug history | No | No | **Yes (file.edited hook)** |
 | Suggests `memory_crystallize` | No | No | **Yes (idle + done ≥3)** |
+| Config file | n/a | env vars only | **`oh-am.jsonc` (JSONC) + env vars** |
+| Profiles (multi-instance switch) | n/a | No | **Yes (`profiles` + `activeProfile`)** |
+| MCP-only mode branching | n/a | No | **Yes (auto-detect or explicit)** |
+| Health check on init | n/a | No | **Yes (optional self-disable)** |
 | Cloud dependency | None | None | None |
 | Cost | $0 | $0 | $0 |
 
@@ -439,10 +457,13 @@ Both plugins can coexist — they push to different memory systems.
 <details>
 <summary><b>Directive doesn't appear in the system prompt</b></summary>
 
-1. Confirm plugin loaded: check opencode logs for `[oh-am] plugin loaded` (with `OH_AM_DEBUG=1`)
+1. Confirm plugin loaded: check opencode logs for `[oh-am] plugin loaded` (with `OH_AM_DEBUG=1` or `debug: true` in config)
 2. Confirm `opencode.json` has both entries (capture.ts AND oh-my-am/plugin.ts)
 3. Confirm symlink target exists: `ls -la ~/.config/opencode/plugins/oh-my-agentmemory/plugin.ts`
 4. Confirm agentmemory server is up: `curl http://localhost:3111/agentmemory/health`
+   — or set `"healthCheckOnBoot": true, "healthCheckFatal": false` to see the warning on plugin init
+5. Confirm `enforcement` is not disabled via `OH_AM_DISABLE=enforcement` env var or
+   `"disabled": ["enforcement"]` in `oh-am.jsonc`
 
 </details>
 
@@ -450,9 +471,14 @@ Both plugins can coexist — they push to different memory systems.
 <summary><b>Slots stay empty after session.created</b></summary>
 
 1. Run `/am-bootstrap` to force re-bootstrap and see proposed content
-2. Check `OH_AM_DEBUG=1` for `[oh-am] bootstrap filled N/N slots`
-3. If detection picks the wrong project, add your cwd to `PROJECT_MAP` in `src/core/bootstrap.ts`
-4. The `init` hook may be disabled via `OH_AM_DISABLE=init`
+2. Check stderr with `OH_AM_DEBUG=1` (or `"debug": true` in config) for
+   `[oh-am] bootstrap filled N/N slots`
+3. If detection picks the wrong project, either:
+   - Add your cwd to `PROJECT_MAP` in `src/core/bootstrap.ts`, or
+   - Add an entry to `projectMap` in `~/.config/opencode/oh-am.jsonc`
+     (no code edit needed)
+4. The `init` hook may be disabled via `OH_AM_DISABLE=init` env var or
+   `"disabled": ["init"]` in config
 
 </details>
 
@@ -462,7 +488,9 @@ Both plugins can coexist — they push to different memory systems.
 The `learning` hook is conservative by default — it requires both an error signal in
 file history AND a meaningful edit size. If still too noisy:
 
-1. Disable temporarily: `OH_AM_DISABLE=learning`
+1. Disable temporarily:
+   - Env: `OH_AM_DISABLE=learning opencode`
+   - Config: `"disabled": ["learning"]` in `oh-am.jsonc`
 2. Tune filters in `src/core/lessons.ts`:
    - Raise `MIN_EDIT_LINES` (default 5)
    - Add exclude patterns to skip test files or generated code
@@ -475,8 +503,13 @@ file history AND a meaningful edit size. If still too noisy:
 
 The directive body is ~600 tokens. To shrink:
 
-1. Edit `src/core/policy.ts` — shorten rule texts
-2. Or use compact mode by editing `system-transform.ts` to call `buildDirective(ctx, { compact: true })` — this drops the rule bodies and keeps only state/keyword lines
+1. Drop a section entirely via config (no code edit): set e.g.
+   `"policy": { "crystal": [] }` in `oh-am.jsonc` to remove crystal rules
+2. Override header/footer text via `"policy": { "header": "...", "footer": null }`
+3. Edit `src/core/policy.ts` to shorten rule texts
+4. Or use compact mode by editing `system-transform.ts` to call
+   `buildDirective(ctx, { compact: true })` — this drops the rule bodies
+   and keeps only state/keyword lines
 
 </details>
 

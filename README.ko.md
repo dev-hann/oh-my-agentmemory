@@ -191,7 +191,21 @@ for f in am-recall am-save am-bootstrap am-status; do
 done
 ```
 
-### 6. opencode 재시작
+### 6. (선택) 설정 파일 생성
+
+기본값으로 바로 동작합니다 (localhost agentmemory, auto 모드). 영구 설정을
+원하면 — 원격 서버, 프로필, 커스텀 프로젝트 맵, 정책 오버라이드 —
+`~/.config/opencode/oh-am.jsonc`를 생성:
+
+```bash
+cp ~/Documents/oh-my-agentmemory/examples/oh-am.full.jsonc \
+   ~/.config/opencode/oh-am.jsonc
+# 이후 취향에 맞게 수정 — 모든 필드는 선택 사항
+```
+
+전체 스키마는 [설정](#설정) 섹션 참고.
+
+### 7. opencode 재시작
 
 `/am-status`로 확인 — pinned slots이 채워져 있어야 합니다.
 
@@ -368,12 +382,13 @@ oh-my-agentmemory/
 
 ```bash
 bun install
-bun run test            # vitest, 35 테스트, ~600ms
+bun run test            # vitest, 62 테스트, ~200ms
 bun run typecheck       # tsc --noEmit, strict 모드
 ```
 
-모든 테스트는 `core/`를 대상으로 합니다 — 순수 함수, 결정론적, 네트워크 없음.
-어댑터 동작은 실행 중인 agentmemory 서버 대상으로 수동 검증합니다.
+모든 테스트는 `core/`와 JSONC config 계층을 대상으로 합니다 — 순수 함수,
+결정론적, 네트워크 없음. 어댑터 동작은 실행 중인 agentmemory 서버 대상으로
+수동 검증합니다.
 
 ---
 
@@ -388,6 +403,10 @@ bun run typecheck       # tsc --noEmit, strict 모드
 | "이거 기억해" / "remember"에 반응 | 아니오 | 아니오 | **예 (키워드 감지)** |
 | 버그 히스토리에서 자동 lesson 저장 | 아니오 | 아니오 | **예 (file.edited 훅)** |
 | `memory_crystallize` 제안 | 아니오 | 아니오 | **예 (idle + done ≥3)** |
+| 설정 파일 | 해당 없음 | 환경변수만 | **`oh-am.jsonc` (JSONC) + 환경변수** |
+| 프로필 (다중 인스턴스 전환) | 해당 없음 | 아니오 | **예 (`profiles` + `activeProfile`)** |
+| MCP-only 모드 분기 | 해당 없음 | 아니오 | **예 (자동 감지 또는 명시)** |
+| init 시 헬스체크 | 해당 없음 | 아니오 | **예 (선택적 자가 비활성)** |
 | 클라우드 의존성 | 없음 | 없음 | 없음 |
 | 비용 | $0 | $0 | $0 |
 
@@ -417,10 +436,13 @@ oh-my-agentmemory는 다음 경우에 올바른 선택입니다:
 <details>
 <summary><b>directive가 시스템 프롬프트에 나타나지 않음</b></summary>
 
-1. 플러그인 로드 확인: `OH_AM_DEBUG=1`로 opencode 로그에서 `[oh-am] plugin loaded` 확인
+1. 플러그인 로드 확인: `OH_AM_DEBUG=1` (또는 config의 `debug: true`)로 opencode 로그에서 `[oh-am] plugin loaded` 확인
 2. `opencode.json`에 두 항목(capture.ts AND oh-my-am/plugin.ts)이 모두 있는지 확인
 3. 심볼릭 링크 대상 존재 확인: `ls -la ~/.config/opencode/plugins/oh-my-agentmemory/plugin.ts`
 4. agentmemory 서버 동작 확인: `curl http://localhost:3111/agentmemory/health`
+   — 또는 config에 `"healthCheckOnBoot": true, "healthCheckFatal": false` 설정 시 init 경고 확인
+5. `enforcement`가 비활성화되어 있지 않은지 확인 — env `OH_AM_DISABLE=enforcement` 또는
+   config의 `"disabled": ["enforcement"]`
 
 </details>
 
@@ -428,9 +450,12 @@ oh-my-agentmemory는 다음 경우에 올바른 선택입니다:
 <summary><b>session.created 이후에도 slots이 비어 있음</b></summary>
 
 1. `/am-bootstrap`을 실행해 강제 재부트스트랩 및 제안 내용 확인
-2. `OH_AM_DEBUG=1`로 `[oh-am] bootstrap filled N/N slots` 로그 확인
-3. 감지가 잘못된 프로젝트를 고르면 `src/core/bootstrap.ts`의 `PROJECT_MAP`에 cwd 추가
-4. `init` hook이 `OH_AM_DISABLE=init`으로 비활성화되어 있을 수 있음
+2. `OH_AM_DEBUG=1` (또는 config의 `debug: true`)로 `[oh-am] bootstrap filled N/N slots` 로그 확인
+3. 감지가 잘못된 프로젝트를 고르면:
+   - `src/core/bootstrap.ts`의 `PROJECT_MAP`에 cwd 추가, 또는
+   - `~/.config/opencode/oh-am.jsonc`의 `projectMap`에 항목 추가 (코드 수정 불필요)
+4. `init` hook이 비활성화되어 있을 수 있음 — env `OH_AM_DISABLE=init` 또는
+   config의 `"disabled": ["init"]`
 
 </details>
 
@@ -440,7 +465,9 @@ oh-my-agentmemory는 다음 경우에 올바른 선택입니다:
 `learning` hook은 기본적으로 보수적입니다 — 파일 히스토리의 에러 신호 AND 의미 있는
 편집 크기가 모두 필요합니다. 그래도 시끄러우면:
 
-1. 일시 비활성화: `OH_AM_DISABLE=learning`
+1. 일시 비활성화:
+   - 환경변수: `OH_AM_DISABLE=learning opencode`
+   - config: `oh-am.jsonc`에 `"disabled": ["learning"]`
 2. `src/core/lessons.ts`에서 필터 조정:
    - `MIN_EDIT_LINES` 올리기 (기본 5)
    - 테스트 파일이나 생성 코드를 스킵하는 제외 패턴 추가
@@ -453,8 +480,12 @@ oh-my-agentmemory는 다음 경우에 올바른 선택입니다:
 
 directive 본문은 약 600 토큰입니다. 줄이려면:
 
-1. `src/core/policy.ts` 편집 — 규칙 텍스트 단축
-2. 또는 `system-transform.ts`에서 `buildDirective(ctx, { compact: true })` 호출 — 규칙 본문을 드롭하고 상태/키워드 라인만 유지
+1. config로 섹션 통째로 제거 (코드 수정 불필요): `oh-am.jsonc`에서
+   예: `"policy": { "crystal": [] }` — crystal 규칙 섹션 제거
+2. `"policy": { "header": "...", "footer": null }`로 헤더/푸터 텍스트 오버라이드
+3. `src/core/policy.ts` 편집 — 규칙 텍스트 단축
+4. 또는 `system-transform.ts`에서 `buildDirective(ctx, { compact: true })` 호출 —
+   규칙 본문을 드롭하고 상태/키워드 라인만 유지
 
 </details>
 
