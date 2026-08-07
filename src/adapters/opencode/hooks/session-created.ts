@@ -8,29 +8,18 @@
  */
 
 import { buildBootstrapUpdates } from "../../../core/bootstrap.js";
-import type { SlotLabel } from "../../../core/types.js";
 import { emptySlotLabels, listSlots, observe, replaceSlot } from "../client.js";
 import { invalidateSessionContext } from "./system-transform.js";
+import { isPhaseDisabled } from "./_shared.js";
 
 const DEBUG = process.env.OH_AM_DEBUG === "1";
-
-function parseDisabledPhases(): Set<string> {
-  const raw = process.env.OH_AM_DISABLE ?? "";
-  return new Set(
-    raw
-      .split(/[,\s]+/)
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean),
-  );
-}
 
 export async function onSessionCreated(params: {
   sessionId: string;
   cwd: string | null;
   project: string | null;
 }): Promise<void> {
-  const disabled = parseDisabledPhases();
-  if (disabled.has("init")) return;
+  if (isPhaseDisabled("init")) return;
 
   // Drop system-transform caches so the new session reloads slot state.
   invalidateSessionContext(params.sessionId);
@@ -43,7 +32,7 @@ export async function onSessionCreated(params: {
     return;
   }
 
-  const empties: SlotLabel[] = emptySlotLabels(slots);
+  const empties: string[] = emptySlotLabels(slots);
   if (empties.length === 0) {
     if (DEBUG) console.error("[oh-am] no empty pinned slots, skipping bootstrap");
     return;

@@ -14,63 +14,44 @@
  */
 
 import type { Plugin } from "@opencode-ai/plugin";
+import { loadConfig } from "./config.js";
+import { healthCheck } from "./client.js";
+import { resolveMode } from "./mode.js";
 import { onChatMessage } from "./hooks/chat-message.js";
 import { onFileEdited } from "./hooks/file-edited.js";
 import { onSessionCreated } from "./hooks/session-created.js";
 import { onSessionStatus } from "./hooks/session-idle.js";
 import { systemTransformHook } from "./hooks/system-transform.js";
 
-const DEBUG = process.env.OH_AM_DEBUG === "1";
-
-interface OpencodeEvent {
-  type: string;
-  properties?: Record<string, unknown>;
-}
-
-interface SessionCreatedProperties {
-  info?: { id?: string; title?: string };
-  sessionID?: string;
-}
-
-interface FileEditedProperties {
-  sessionID?: string;
-  sessionId?: string;
-  file?: string;
-  filePath?: string;
-  path?: string;
-  additions?: number;
-  deletions?: number;
-  diff?: Array<{ additions?: number; deletions?: number; file?: string }>;
-}
-
-interface SessionStatusProperties {
-  sessionID?: string;
-  sessionId?: string;
-  status?: { type?: string; attempt?: number; message?: string };
-}
-
-function pickFilePath(props: FileEditedProperties): string | null {
-  if (typeof props.file === "string") return props.file;
-  if (typeof props.filePath === "string") return props.filePath;
-  if (typeof props.path === "string") return props.path;
-  if (Array.isArray(props.diff) && props.diff.length > 0) {
-    const first = props.diff[0];
-    if (first && typeof first.file === "string") return first.file;
-  }
-  return null;
-}
-
-function pickSessionId(...candidates: Array<unknown>): string | null {
-  for (const c of candidates) {
-    if (typeof c === "string" && c.length > 0) return c;
-  }
-  return null;
-}
-
 export const OhMyAgentmemoryPlugin: Plugin = async (ctx) => {
-  if (DEBUG) {
-    console.error("[oh-am] plugin loaded");
+  const cfg = loadConfig();
+
+  if (cfg.debug) {
+    console.error(`[oh-am] plugin loaded (mode=${cfg.mode}, url=${cfg.url})`);
   }
+
+  // Health check — non-fatal unless healthCheckFatal is set.
+  if (cfg.healthCheckOnBoot) {
+    const ok = await healthCheck(cfg.healthCheckTimeoutMs);
+    if (!ok) {
+      console.error(
+        `[oh-am] health check failed — agentmemory server not reachable at ${cfg.url}`,
+      );
+      if (cfg.healthCheckFatal) {
+        console.error("[oh-am] healthCheckFatal=true, plugin self-disabling");
+        return {};
+      }
+    } else if (cfg.debug) {
+      console.error("[oh-am] health check ok");
+    }
+  }
+
+  // Resolve operating mode. async, fire-and-forget — first turn may run
+  // before this resolves (treated as "full" by default, switches to mcp-only
+  // once probe completes).
+  void resolveMode(cfg).catch((e) => {
+    if (cfg.debug) console.error("[oh-am] mode resolve failed:", (e as Error).message);
+  });
 
   const project =
     (ctx as { worktree?: string; project?: { id?: string } }).worktree ??
@@ -153,3 +134,50 @@ export const OhMyAgentmemoryPlugin: Plugin = async (ctx) => {
 };
 
 export default OhMyAgentmemoryPlugin;
+
+// ── Helper types + utilities for event parsing ──────────────────────────────
+
+interface OpencodeEvent {
+  type: string;
+  properties?: Record<string, unknown>;
+}
+
+interface SessionCreatedProperties {
+  info?: { id?: string; title?: string };
+  sessionID?: string;
+}
+
+interface FileEditedProperties {
+  sessionID?: string;
+  sessionId?: string;
+  file?: string;
+  filePath?: string;
+  path?: string;
+  additions?: number;
+  deletions?: number;
+  diff?: Array<{ additions?: number; deletions?: number; file?: string }>;
+}
+
+interface SessionStatusProperties {
+  sessionID?: string;
+  sessionId?: string;
+  status?: { type?: string; attempt?: number; message?: string };
+}
+
+function pickFilePath(props: FileEditedProperties): string | null {
+  if (typeof props.file === "string") return props.file;
+  if (typeof props.filePath === "string") return props.filePath;
+  if (typeof props.path === "string") return props.path;
+  if (Array.isArray(props.diff) && props.diff.length > 0) {
+    const first = props.diff[0];
+    if (first && typeof first.file === "string") return first.file;
+  }
+  return null;
+}
+
+function pickSessionId(...candidates: Array<unknown>): string | null {
+  for (const c of candidates) {
+    if (typeof c === "string" && c.length > 0) return c;
+  }
+  return null;
+}

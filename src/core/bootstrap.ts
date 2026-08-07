@@ -132,7 +132,7 @@ Forbidden:
 /** Build slot updates for any of the four core slots that are empty. */
 export function buildBootstrapUpdates(
   cwd: string,
-  emptySlots: SlotLabel[],
+  emptySlots: string[],
 ): SlotUpdate[] {
   if (emptySlots.length === 0) return [];
   const detection = detectProject(cwd);

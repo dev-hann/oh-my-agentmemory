@@ -1,0 +1,109 @@
+// oh-my-agentmemory — full configuration reference.
+//
+// Place at: ~/.config/opencode/oh-am.jsonc
+//
+// All fields are optional. Built-in defaults shown for each.
+// Env vars (when set) take precedence over this file.
+//
+// Precedence per field:
+//   process env var > this file > built-in default
+{
+  // ─── agentmemory server connection ─────────────────────────────────
+  //
+  // Defaults to AGENTMEMORY_URL env var, then "http://localhost:3111".
+  "url": "http://localhost:3111",
+
+  // Bearer token, required only if the server enables auth.
+  // Env AGENTMEMORY_SECRET wins.
+  "secret": "",
+
+  // ─── operating mode ────────────────────────────────────────────────
+  //
+  // "auto"      — probe agentmemory on session.created, decide full vs mcp-only
+  // "full"      — assume capture.ts is loaded; never probe
+  // "mcp-only"  — assume capture.ts NOT loaded; skip learning/archive hooks
+  //
+  // Env OH_AM_MODE wins.
+  "mode": "auto",
+
+  // ─── hook toggles ──────────────────────────────────────────────────
+  //
+  // Phase ids to disable. Replaces OH_AM_DISABLE env.
+  // Valid: "enforcement" | "init" | "intent" | "archive" | "learning"
+  "disabled": [],
+
+  // ─── MCP-only sub-options ──────────────────────────────────────────
+  //
+  // Only consulted when mode resolves to "mcp-only".
+  "mcpOnly": {
+    // Push a stronger directive every turn reminding the LLM that no
+    // auto-capture is running. Default true.
+    "strengthenDirective": true,
+
+    // When the intent hook detects "remember" / "save this" keywords,
+    // call memory_save directly instead of queueing for the directive.
+    // Default false (LLM stays the writer — safer).
+    "autoSaveOnKeyword": false,
+  },
+
+  // ─── named profiles ────────────────────────────────────────────────
+  //
+  // Quick switch between agentmemory instances (local dev / cloud / team).
+  // activeProfile selects which entry's url/secret fill the defaults.
+  // Env vars still win over the active profile.
+  "profiles": {
+    "local":  { "url": "http://localhost:3111" },
+    "remote": { "url": "https://am.fly.dev", "secret": "sm_xxxxxxxxxxxx" },
+    "team":   { "url": "https://team-am.internal", "secret": "sm_team_xxx" }
+  },
+  "activeProfile": "local",
+
+  // ─── bootstrap project map ─────────────────────────────────────────
+  //
+  // Extend (prepend) or replace the built-in PROJECT_MAP in
+  // src/core/bootstrap.ts. Each entry is matched against the cwd at
+  // session.created; the first match wins.
+  //
+  // "merge" mode: user entries checked first, then built-ins.
+  // "replace" mode: ignore built-ins entirely.
+  "projectMap": [
+    {
+      "match": "my-cool-app",        // RegExp source, matched against cwd
+      "projectId": "mca",            // stable identifier used in slot text
+      "displayName": "My Cool App",  // human-readable
+      "stack": ["Go", "Postgres", "gRPC"]  // optional hints
+    },
+    {
+      "match": "data-pipeline",
+      "projectId": "data-pipeline",
+      "displayName": "Data Pipeline Service",
+      "stack": ["Python", "Airflow", "Snowflake"]
+    }
+  ],
+  "projectMapMode": "merge",
+
+  // ─── policy text overrides ────────────────────────────────────────
+  //
+  // Replace any section of the directive built by src/core/policy.ts.
+  // Omit a field to keep built-in defaults; set to null / empty array
+  // to drop that section entirely.
+  "policy": {
+    // "header": "AGENTMEMORY POLICY ACTIVE.",   // override text
+    // "footer": null,                            // drop entirely
+    // "recall": [ { "id": "custom-1", "text": "Always recall first." } ],
+    // "write": [],
+    // "crystal": []
+  },
+
+  // ─── health check ──────────────────────────────────────────────────
+  //
+  // On plugin init, GET /agentmemory/health.
+  "healthCheckOnBoot": true,        // ping server at startup
+  "healthCheckTimeoutMs": 2000,     // abort after N ms
+  "healthCheckFatal": false,        // if true, plugin self-disables on failure
+
+  // ─── debug ─────────────────────────────────────────────────────────
+  //
+  // Verbose stderr logging. OH_AM_DEBUG=1 env wins.
+  "debug": false
+}

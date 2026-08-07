@@ -12,20 +12,11 @@
 
 import type { Action } from "../../../core/types.js";
 import { getDoneActions, observe } from "../client.js";
+import { isMcpOnly, isPhaseDisabled } from "./_shared.js";
 import { invalidateSessionContext } from "./system-transform.js";
 
 const DEBUG = process.env.OH_AM_DEBUG === "1";
 const MIN_DONE_FOR_CRYSTAL = 3;
-
-function parseDisabledPhases(): Set<string> {
-  const raw = process.env.OH_AM_DISABLE ?? "";
-  return new Set(
-    raw
-      .split(/[,\s]+/)
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean),
-  );
-}
 
 interface SessionStatusProperties {
   sessionID?: string;
@@ -37,8 +28,9 @@ interface SessionStatusProperties {
 export async function onSessionStatus(
   properties: SessionStatusProperties,
 ): Promise<void> {
-  const disabled = parseDisabledPhases();
-  if (disabled.has("archive")) return;
+  if (isPhaseDisabled("archive")) return;
+  // In mcp-only mode, no capture plugin writes actions — skip the probe.
+  if (isMcpOnly()) return;
 
   const status = properties.status;
   if (!status || status.type !== "idle") return;

@@ -6,6 +6,7 @@
  * caches the result per session.
  */
 
+import type { PolicyRule } from "./policy.js";
 import {
   CRYSTAL_POLICY,
   DIRECTIVE_FOOTER,
@@ -16,6 +17,29 @@ import {
 import type { DirectiveContext, KeywordMatch, PhaseId } from "./types.js";
 
 const SEPARATOR = "\n---\n";
+
+const MCP_ONLY_BANNER =
+  "⚠️ MCP-ONLY MODE: capture plugin not detected. raw observations will NOT be " +
+  "auto-recorded. The following responsibilities shift entirely to you:";
+
+const MCP_ONLY_RULES: readonly PolicyRule[] = [
+  {
+    id: "mcp-only-save",
+    text: "Every architectural / non-obvious decision → call memory_save THIS turn. Nothing else will remember it.",
+  },
+  {
+    id: "mcp-only-lesson",
+    text: "Every bug + fix → call memory_lesson_save THIS turn. Auto-capture is off.",
+  },
+  {
+    id: "mcp-only-handoff",
+    text: "Session-end handoff → call memory_slot_replace on guidance. No summarizer will run.",
+  },
+  {
+    id: "mcp-only-no-history",
+    text: "memory_file_history / memory_timeline will return empty — do not rely on them.",
+  },
+];
 
 function bullets(rules: readonly { text: string }[]): string {
   return rules.map((r) => `• ${r.text}`).join("\n");
@@ -50,6 +74,8 @@ function disabledNote(phases: Set<PhaseId>): string {
 export interface DirectiveBuildOptions {
   /** When true, omit the policy bodies and emit only the state/keyword lines. */
   compact?: boolean;
+  /** When true, push the MCP-only banner + stronger rules before policy. */
+  mcpOnly?: boolean;
 }
 
 export function buildDirective(
@@ -57,6 +83,10 @@ export function buildDirective(
   options: DirectiveBuildOptions = {},
 ): string {
   const parts: string[] = [DIRECTIVE_HEADER];
+
+  if (options.mcpOnly) {
+    parts.push(MCP_ONLY_BANNER, bullets(MCP_ONLY_RULES));
+  }
 
   if (!options.compact) {
     parts.push(
@@ -90,5 +120,6 @@ export function directiveCacheKey(ctx: DirectiveContext): string {
     ctx.crystalCandidateIds.join(","),
     ctx.pendingKeywords.map((k) => `${k.action}:${k.match}`).join("|"),
     [...ctx.disabledPhases].sort().join(","),
+    ctx.mcpOnly ? "mcp-only" : "full",
   ].join("::");
 }

@@ -2,6 +2,20 @@
  * Shared types — agent-agnostic. No I/O, no external deps.
  */
 
+import type { PhaseId } from "./config-types.js";
+
+export type { OhAmMode, PhaseId } from "./config-types.js";
+
+export interface Slot {
+  label: string;
+  content: string;
+  pinned: boolean;
+  readOnly: boolean;
+  scope: "project" | "global";
+  sizeLimit: number;
+  updatedAt: string;
+}
+
 /** Pinned slot identifiers used by agentmemory. */
 export type SlotLabel =
   | "persona"
@@ -12,16 +26,6 @@ export type SlotLabel =
   | "guidance"
   | "self_notes"
   | "session_patterns";
-
-export interface Slot {
-  label: SlotLabel;
-  content: string;
-  pinned: boolean;
-  readOnly: boolean;
-  scope: "project" | "global";
-  sizeLimit: number;
-  updatedAt: string;
-}
 
 export interface Action {
   id: string;
@@ -58,20 +62,15 @@ export interface LessonCandidate {
 }
 
 export interface DirectiveContext {
-  emptySlots: SlotLabel[];
+  emptySlots: string[];
   doneActionCount: number;
   crystalCandidateIds: string[];
   pendingKeywords: KeywordMatch[];
-  /** Disabled phases via OH_AM_DISABLE env var. */
+  /** Disabled phases via OH_AM_DISABLE env var or config file. */
   disabledPhases: Set<PhaseId>;
+  /** True when running without agentmemory-capture.ts (MCP-only mode). */
+  mcpOnly: boolean;
 }
-
-export type PhaseId =
-  | "enforcement"
-  | "init"
-  | "intent"
-  | "archive"
-  | "learning";
 
 export interface FileHistoryEntry {
   sessionId: string;

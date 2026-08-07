@@ -9,6 +9,7 @@ function baseCtx(overrides: Partial<DirectiveContext> = {}): DirectiveContext {
     crystalCandidateIds: [],
     pendingKeywords: [],
     disabledPhases: new Set<PhaseId>(),
+    mcpOnly: false,
     ...overrides,
   };
 }

@@ -17,20 +17,11 @@ import {
   recallLessons,
   saveLesson,
 } from "../client.js";
+import { isMcpOnly, isPhaseDisabled } from "./_shared.js";
 
 const DEBUG = process.env.OH_AM_DEBUG === "1";
 const FILE_HISTORY_TTL_MS = 5 * 60 * 1000;
 const FILE_HISTORY_MAX = 50;
-
-function parseDisabledPhases(): Set<string> {
-  const raw = process.env.OH_AM_DISABLE ?? "";
-  return new Set(
-    raw
-      .split(/[,\s]+/)
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean),
-  );
-}
 
 interface HistoryCacheEntry {
   history: FileHistoryEntry[];
@@ -75,8 +66,9 @@ export async function onFileEdited(params: {
   additions?: number;
   deletions?: number;
 }): Promise<void> {
-  const disabled = parseDisabledPhases();
-  if (disabled.has("learning")) return;
+  if (isPhaseDisabled("learning")) return;
+  // In mcp-only mode, file_history is permanently empty — skip the HTTP.
+  if (isMcpOnly()) return;
 
   const { sessionId, project, filePath } = params;
   if (!filePath) return;

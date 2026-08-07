@@ -1,8 +1,12 @@
 /**
  * HTTP wrapper around the agentmemory REST API.
  * Used by opencode adapter hooks. Failures are swallowed + logged via OH_AM_DEBUG.
+ *
+ * URL/secret resolution happens once on first call via loadConfig():
+ *   precedence: AGENTMEMORY_URL env > oh-am.jsonc > "http://localhost:3111"
  */
 
+import { loadConfig } from "./config.js";
 import type {
   Action,
   FileHistoryEntry,
@@ -11,14 +15,29 @@ import type {
   SlotLabel,
 } from "../../core/types.js";
 
-const API =
-  process.env.AGENTMEMORY_URL || "http://localhost:3111";
-const SECRET = process.env.AGENTMEMORY_SECRET || "";
-const DEBUG = process.env.OH_AM_DEBUG === "1";
+let resolvedApi: string | null = null;
+let resolvedSecret: string | null = null;
+const DEBUG_ENV = process.env.OH_AM_DEBUG === "1";
+
+function apiBase(): string {
+  if (resolvedApi !== null) return resolvedApi;
+  const cfg = loadConfig();
+  resolvedApi = cfg.url;
+  resolvedSecret = cfg.secret;
+  return resolvedApi;
+}
+
+function secretToken(): string {
+  if (resolvedSecret !== null) return resolvedSecret;
+  const cfg = loadConfig();
+  resolvedSecret = cfg.secret;
+  return resolvedSecret;
+}
 
 function headers(): Record<string, string> {
   const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
+  const secret = secretToken();
+  if (secret) h["Authorization"] = `Bearer ${secret}`;
   return h;
 }
 
@@ -28,19 +47,19 @@ async function postJson<T = unknown>(
   timeoutMs = 4000,
 ): Promise<T | null> {
   try {
-    const res = await fetch(`${API}/agentmemory${path}`, {
+    const res = await fetch(`${apiBase()}/agentmemory${path}`, {
       method: "POST",
       headers: headers(),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) {
-      if (DEBUG) console.error(`[oh-am] ${path} → ${res.status}`);
+      if (DEBUG_ENV) console.error(`[oh-am] ${path} → ${res.status}`);
       return null;
     }
     return (await res.json()) as T;
   } catch (e) {
-    if (DEBUG) console.error(`[oh-am] ${path} failed:`, (e as Error).message);
+    if (DEBUG_ENV) console.error(`[oh-am] ${path} failed:`, (e as Error).message);
     return null;
   }
 }
@@ -51,7 +70,7 @@ async function postVoid(
   timeoutMs = 4000,
 ): Promise<boolean> {
   try {
-    await fetch(`${API}/agentmemory${path}`, {
+    await fetch(`${apiBase()}/agentmemory${path}`, {
       method: "POST",
       headers: headers(),
       body: JSON.stringify(body),
@@ -59,7 +78,22 @@ async function postVoid(
     });
     return true;
   } catch (e) {
-    if (DEBUG) console.error(`[oh-am] ${path} failed:`, (e as Error).message);
+    if (DEBUG_ENV) console.error(`[oh-am] ${path} failed:`, (e as Error).message);
+    return false;
+  }
+}
+
+// ── Health ─────────────────────────────────────────────────────────────────
+
+export async function healthCheck(timeoutMs = 2000): Promise<boolean> {
+  try {
+    const res = await fetch(`${apiBase()}/agentmemory/health`, {
+      method: "GET",
+      headers: headers(),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return res.ok;
+  } catch {
     return false;
   }
 }
@@ -90,7 +124,7 @@ export async function replaceSlot(
   return postVoid("/slot/replace", { label, content });
 }
 
-export function emptySlotLabels(slots: Slot[]): SlotLabel[] {
+export function emptySlotLabels(slots: Slot[]): string[] {
   return slots
     .filter((s) => s.pinned && (s.content ?? "").trim().length === 0)
     .map((s) => s.label);
@@ -106,6 +140,22 @@ export async function getDoneActions(limit = 25): Promise<Action[]> {
   const r = await postJson<FrontierResponse>("/frontier", { limit });
   const actions = r?.actions ?? [];
   return actions.filter((a) => a.status === "done");
+}
+
+// ── Sessions ───────────────────────────────────────────────────────────────
+
+interface SessionRow {
+  observationCount?: number;
+}
+
+interface SessionsResponse {
+  sessions?: SessionRow[];
+}
+
+export async function getRecentSessions(limit = 10): Promise<SessionRow[]> {
+  const r = await postJson<SessionsResponse>("/sessions", {});
+  const sessions = r?.sessions ?? [];
+  return sessions.slice(0, limit);
 }
 
 // ── File history ───────────────────────────────────────────────────────────
@@ -150,6 +200,24 @@ export async function saveLesson(
   const body: Record<string, unknown> = { content, tags, confidence };
   if (project) body.project = project;
   return postVoid("/lesson/save", body);
+}
+
+// ── Long-term memory save (for intent autoSaveOnKeyword) ───────────────────
+
+export async function saveMemory(params: {
+  content: string;
+  concepts?: string;
+  type?:
+    | "pattern"
+    | "preference"
+    | "architecture"
+    | "bug"
+    | "workflow"
+    | "fact";
+  files?: string;
+  project?: string;
+}): Promise<boolean> {
+  return postVoid("/save", params as unknown as Record<string, unknown>);
 }
 
 // ── Crystal ────────────────────────────────────────────────────────────────

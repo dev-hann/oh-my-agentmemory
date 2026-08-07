@@ -10,7 +10,7 @@ this plugin forces the agent to **write** to memory proactively.
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![opencode](https://img.shields.io/badge/opencode-%E2%89%A51.14-6E56CF.svg)](https://opencode.ai)
 [![agentmemory](https://img.shields.io/badge/agentmemory-%E2%89%A50.9.28-FF6B35.svg)](https://github.com/rohitg00/agentmemory)
-[![tests](https://img.shields.io/badge/tests-35%20passing-22C55E.svg)](./tests)
+[![tests](https://img.shields.io/badge/tests-62%20passing-22C55E.svg)](./tests)
 [![phases](https://img.shields.io/badge/hooks-5-9333EA.svg)](#how-it-works)
 
 [English](./README.md) · [한국어](./README.ko.md)
@@ -220,16 +220,111 @@ Verify with `/am-status` — it should report pinned slots filled.
 
 ## Configuration
 
-All optional. Read from environment variables by the opencode adapter.
+Three layers, in descending precedence:
+
+1. **Process env vars** (override everything for one-shot runs / CI)
+2. **`~/.config/opencode/oh-am.jsonc`** (persistent settings, JSONC = comments allowed)
+3. **Built-in defaults** (see `src/core/config-types.ts`)
+
+### Env vars (one-shot overrides)
 
 | Var | Default | Effect |
 |---|---|---|
 | `AGENTMEMORY_URL` | `http://localhost:3111` | agentmemory server base URL |
 | `AGENTMEMORY_SECRET` | `""` | Bearer token if auth enabled on server |
+| `OH_AM_MODE` | `auto` | `auto` \| `full` \| `mcp-only` |
+| `OH_AM_DISABLE` | `""` | Comma-list of purpose names to disable: `enforcement`, `init`, `intent`, `archive`, `learning` |
 | `OH_AM_DEBUG` | `0` | Set to `1` for verbose stderr logging |
-| `OH_AM_DISABLE` | `""` | Comma-list of purpose names to disable: `enforcement`, `init`, `intent`, `archive`, `learning` (e.g. `intent,learning`) |
 
 Example: `OH_AM_DEBUG=1 OH_AM_DISABLE=learning opencode`
+
+### Config file (persistent)
+
+Create `~/.config/opencode/oh-am.jsonc`:
+
+```jsonc
+{
+  // agentmemory server
+  "url": "http://localhost:3111",
+  "secret": "",
+
+  // operating mode: "auto" | "full" | "mcp-only"
+  "mode": "auto",
+
+  // purpose names to disable
+  "disabled": ["learning"],
+
+  // MCP-only sub-options (only used when mode resolves to "mcp-only")
+  "mcpOnly": {
+    "strengthenDirective": true,
+    "autoSaveOnKeyword": false
+  },
+
+  // named profiles for multi-instance switching
+  "profiles": {
+    "local":  { "url": "http://localhost:3111" },
+    "remote": { "url": "https://am.fly.dev", "secret": "sm_xxx" }
+  },
+  "activeProfile": "local",
+
+  // extend built-in project map without code edit
+  "projectMap": [
+    {
+      "match": "my-new-project",
+      "projectId": "mnp",
+      "displayName": "My New Project",
+      "stack": ["Go", "Postgres"]
+    }
+  ],
+  "projectMapMode": "merge",    // "merge" (prepend) | "replace"
+
+  // policy text overrides (omit to keep built-in defaults)
+  "policy": {
+    // "header": "AGENTMEMORY POLICY ACTIVE.",
+    // "recall": [{ "id": "custom", "text": "..." }],
+    // "write": [],
+    // "crystal": []
+  },
+
+  // health check on plugin init
+  "healthCheckOnBoot": true,
+  "healthCheckTimeoutMs": 2000,
+  "healthCheckFatal": false,
+
+  // verbose stderr logging
+  "debug": false
+}
+```
+
+Full reference with every field documented: [`examples/oh-am.full.jsonc`](./examples/oh-am.full.jsonc).
+
+### MCP-only mode
+
+Set `"mode": "mcp-only"` (or `OH_AM_MODE=mcp-only`) when running without
+`agentmemory-capture.ts` — e.g. on Cursor, Claude Desktop, or a second
+machine that only consumes a shared agentmemory instance.
+
+In this mode:
+
+- **`learning`** and **`archive`** hooks skip entirely (their data sources
+  — file history, done actions — are empty without capture.ts)
+- **`enforcement`** directive gains a stronger banner warning the LLM that
+  no auto-capture is running (disable with `"strengthenDirective": false`)
+- **`intent`** hook can call `memory_save` directly on `"remember"` matches
+  when `"autoSaveOnKeyword": true` (default `false` — LLM stays the writer)
+
+Auto-detection (`"mode": "auto"`) probes the agentmemory server on first
+session.created; if recent sessions average <5 observations each it
+switches to `mcp-only`. Set explicitly to skip the probe.
+
+### Health check
+
+By default, the plugin pings `${url}/agentmemory/health` on init. If
+unreachable:
+
+- Default (`healthCheckFatal: false`): logs a warning, continues running
+  (hooks will silently fail their HTTP calls)
+- `healthCheckFatal: true`: plugin returns no hooks, effectively disabled
 
 ---
 
@@ -247,13 +342,17 @@ oh-my-agentmemory/
 │   │   ├── keywords.ts             # KR/EN keyword patterns
 │   │   ├── lessons.ts              # buildLessonFromFileHistory() → LessonCandidate
 │   │   ├── policy.ts               # rules/memory.md encoded as data
+│   │   ├── config-types.ts         # OhAmConfig + ResolvedConfig types
 │   │   └── types.ts                # shared types
 │   │
 │   └── adapters/
 │       └── opencode/               # current; claude-code/codex later
 │           ├── plugin.ts           # single entry, registers all hooks
+│           ├── config.ts           # JSONC parser + env/file/default merge
+│           ├── mode.ts             # auto-detect full vs mcp-only
 │           ├── client.ts           # agentmemory HTTP wrapper
 │           ├── hooks/
+│           │   ├── _shared.ts      # isPhaseDisabled / isMcpOnly helpers
 │           │   ├── system-transform.ts   # enforcement
 │           │   ├── session-created.ts    # init
 │           │   ├── chat-message.ts       # intent
@@ -265,11 +364,17 @@ oh-my-agentmemory/
 │               ├── am-bootstrap.md
 │               └── am-status.md
 │
+├── examples/
+│   └── oh-am.full.jsonc            # complete config reference
+│
 └── tests/
-    └── core/                       # 35 unit tests (no network)
-        ├── directives.test.ts
-        ├── keywords.test.ts
-        └── bootstrap.test.ts
+    ├── core/                       # unit tests (no network)
+    │   ├── directives.test.ts
+    │   ├── keywords.test.ts
+    │   ├── bootstrap.test.ts
+    │   └── mcp-only.test.ts
+    └── adapters/
+        └── config.test.ts          # JSONC parse + mergeConfig
 ```
 
 ### Future agents
@@ -284,13 +389,13 @@ porting cost down to "write one adapter file per agent."
 
 ```bash
 bun install
-bun run test            # vitest, 35 tests, ~600ms
+bun run test            # vitest, 62 tests, ~200ms
 bun run typecheck       # tsc --noEmit, strict mode
 ```
 
-All tests target `core/` — pure functions, deterministic, no network.
-Adapter behavior is verified manually against a running agentmemory
-server.
+All tests target `core/` and the JSONC config layer — pure functions,
+deterministic, no network. Adapter behavior is verified manually against
+a running agentmemory server.
 
 ---
 

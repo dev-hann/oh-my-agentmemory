@@ -13,45 +13,33 @@ import {
   buildDirective,
   directiveCacheKey,
 } from "../../../core/directives.js";
-import type { DirectiveContext, PhaseId, SlotLabel } from "../../../core/types.js";
+import type { DirectiveContext } from "../../../core/types.js";
+import type { PhaseId } from "../../../core/config-types.js";
 import {
   drainSessionKeywords,
   getDoneActions,
   listSlots,
   emptySlotLabels,
 } from "../client.js";
+import { getConfig, isMcpOnly } from "./_shared.js";
 
 const DEBUG = process.env.OH_AM_DEBUG === "1";
 
 const sessionDirectiveCache = new Map<string, string>();
 const sessionContextCache = new Map<
   string,
-  { emptySlots: SlotLabel[]; doneActionIds: string[]; doneCount: number }
+  { emptySlots: string[]; doneActionIds: string[]; doneCount: number }
 >();
 
-function parseDisabledPhases(): Set<PhaseId> {
-  const raw = process.env.OH_AM_DISABLE ?? "";
-  if (!raw) return new Set();
-  const valid: PhaseId[] = [
-    "enforcement",
-    "init",
-    "intent",
-    "archive",
-    "learning",
-  ];
-  const out = new Set<PhaseId>();
-  for (const part of raw.split(/[,\s]+/)) {
-    const p = part.trim().toLowerCase() as PhaseId;
-    if (valid.includes(p)) out.add(p);
-  }
-  return out;
+function parseDisabledPhasesFromConfig(): Set<PhaseId> {
+  return getConfig().disabled;
 }
 
 async function loadSessionContext(
   sessionId: string,
   project: string | null,
 ): Promise<{
-  emptySlots: SlotLabel[];
+  emptySlots: string[];
   doneActionIds: string[];
   doneCount: number;
 }> {
@@ -78,24 +66,6 @@ async function loadSessionContext(
   return value;
 }
 
-function buildCtx(
-  state: {
-    emptySlots: SlotLabel[];
-    doneActionIds: string[];
-    doneCount: number;
-  },
-  pendingKeywords: DirectiveContext["pendingKeywords"],
-  disabledPhases: Set<PhaseId>,
-): DirectiveContext {
-  return {
-    emptySlots: state.emptySlots,
-    doneActionCount: state.doneCount,
-    crystalCandidateIds: state.doneActionIds,
-    pendingKeywords,
-    disabledPhases,
-  };
-}
-
 export const systemTransformHook: NonNullable<
   Awaited<ReturnType<Plugin>>["experimental.chat.system.transform"]
 > = async (input, output) => {
@@ -106,13 +76,15 @@ export const systemTransformHook: NonNullable<
   if (!sessionId) return;
   if (!output || !Array.isArray(output.system)) return;
 
-  const disabled = parseDisabledPhases();
+  const disabled = parseDisabledPhasesFromConfig();
   if (disabled.has("enforcement")) return;
 
   const state = await loadSessionContext(sessionId, null);
   // Drain whatever the chat-message hook queued for this turn.
   const pendingKeywords = drainSessionKeywords(sessionId);
-  const ctx = buildCtx(state, pendingKeywords, disabled);
+  const mcpOnly = isMcpOnly();
+  const cfg = getConfig();
+  const ctx = buildCtx(state, pendingKeywords, disabled, mcpOnly);
 
   const cacheKey = `${sessionId}::${directiveCacheKey(ctx)}`;
   const cached = sessionDirectiveCache.get(sessionId);
@@ -121,7 +93,9 @@ export const systemTransformHook: NonNullable<
     return;
   }
 
-  const directive = buildDirective(ctx);
+  const directive = buildDirective(ctx, {
+    mcpOnly: mcpOnly && cfg.mcpOnly.strengthenDirective,
+  });
   sessionDirectiveCache.set(sessionId, directive);
   sessionDirectiveCache.set(cacheKey, directive);
   output.system.push(directive);
@@ -131,4 +105,24 @@ export const systemTransformHook: NonNullable<
 export function invalidateSessionContext(sessionId: string): void {
   sessionContextCache.delete(sessionId);
   sessionDirectiveCache.delete(sessionId);
+}
+
+function buildCtx(
+  state: {
+    emptySlots: string[];
+    doneActionIds: string[];
+    doneCount: number;
+  },
+  pendingKeywords: DirectiveContext["pendingKeywords"],
+  disabledPhases: Set<PhaseId>,
+  mcpOnly: boolean,
+): DirectiveContext {
+  return {
+    emptySlots: state.emptySlots,
+    doneActionCount: state.doneCount,
+    crystalCandidateIds: state.doneActionIds,
+    pendingKeywords,
+    disabledPhases,
+    mcpOnly,
+  };
 }

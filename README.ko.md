@@ -10,7 +10,7 @@
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![opencode](https://img.shields.io/badge/opencode-%E2%89%A51.14-6E56CF.svg)](https://opencode.ai)
 [![agentmemory](https://img.shields.io/badge/agentmemory-%E2%89%A50.9.28-FF6B35.svg)](https://github.com/rohitg00/agentmemory)
-[![tests](https://img.shields.io/badge/tests-35%20passing-22C55E.svg)](./tests)
+[![tests](https://img.shields.io/badge/tests-62%20passing-22C55E.svg)](./tests)
 [![phases](https://img.shields.io/badge/hooks-5-9333EA.svg)](#어떻게-동작하나)
 
 [English](./README.md) · 한국어
@@ -210,16 +210,110 @@ done
 
 ## 설정
 
-모두 선택 사항. opencode 어댑터가 환경 변수에서 읽습니다.
+세 계층, 우선순위 높은 순:
+
+1. **프로세스 환경 변수** (일회성 실행 / CI에서 모든 것을 오버라이드)
+2. **`~/.config/opencode/oh-am.jsonc`** (영구 설정, JSONC = 주석 허용)
+3. **빌트인 기본값** (`src/core/config-types.ts` 참고)
+
+### 환경 변수 (일회성 오버라이드)
 
 | 변수 | 기본값 | 효과 |
 |---|---|---|
 | `AGENTMEMORY_URL` | `http://localhost:3111` | agentmemory 서버 기본 URL |
-| `AGENTMEMORY_SECRET` | `""` | 서버에서 인증 활성화 시 Bearer 토큰 |
-| `OH_AM_DEBUG` | `0` | `1`로 설정하면 stderr에 상세 로깅 |
-| `OH_AM_DISABLE` | `""` | 비활성화할 목적 이름들의 콤마 목록: `enforcement`, `init`, `intent`, `archive`, `learning` (예: `intent,learning`) |
+| `AGENTMEMORY_SECRET` | `""` | 서버 인증 활성화 시 Bearer 토큰 |
+| `OH_AM_MODE` | `auto` | `auto` \| `full` \| `mcp-only` |
+| `OH_AM_DISABLE` | `""` | 비활성화할 목적 이름들: `enforcement`, `init`, `intent`, `archive`, `learning` |
+| `OH_AM_DEBUG` | `0` | `1`로 설정하면 stderr 상세 로깅 |
 
 예: `OH_AM_DEBUG=1 OH_AM_DISABLE=learning opencode`
+
+### 설정 파일 (영구)
+
+`~/.config/opencode/oh-am.jsonc` 작성:
+
+```jsonc
+{
+  // agentmemory 서버
+  "url": "http://localhost:3111",
+  "secret": "",
+
+  // 운영 모드: "auto" | "full" | "mcp-only"
+  "mode": "auto",
+
+  // 비활성화할 목적 이름
+  "disabled": ["learning"],
+
+  // MCP-only 하위 옵션 (mode가 "mcp-only"로 확정될 때만 사용)
+  "mcpOnly": {
+    "strengthenDirective": true,
+    "autoSaveOnKeyword": false
+  },
+
+  // 다중 인스턴스 전환을 위한 프로필
+  "profiles": {
+    "local":  { "url": "http://localhost:3111" },
+    "remote": { "url": "https://am.fly.dev", "secret": "sm_xxx" }
+  },
+  "activeProfile": "local",
+
+  // 빌트인 프로젝트 맵을 코드 수정 없이 확장
+  "projectMap": [
+    {
+      "match": "my-new-project",
+      "projectId": "mnp",
+      "displayName": "My New Project",
+      "stack": ["Go", "Postgres"]
+    }
+  ],
+  "projectMapMode": "merge",    // "merge" (앞에 추가) | "replace"
+
+  // 정책 텍스트 오버라이드 (생략하면 빌트인 기본값 사용)
+  "policy": {
+    // "header": "AGENTMEMORY POLICY ACTIVE.",
+    // "recall": [{ "id": "custom", "text": "..." }],
+    // "write": [],
+    // "crystal": []
+  },
+
+  // 플러그인 init 시 헬스체크
+  "healthCheckOnBoot": true,
+  "healthCheckTimeoutMs": 2000,
+  "healthCheckFatal": false,
+
+  // stderr 상세 로깅
+  "debug": false
+}
+```
+
+모든 필드가 문서화된 전체 참조: [`examples/oh-am.full.jsonc`](./examples/oh-am.full.jsonc).
+
+### MCP-only 모드
+
+`"mode": "mcp-only"` 설정 (또는 `OH_AM_MODE=mcp-only`) — `agentmemory-capture.ts`
+없이 실행할 때. 예: Cursor, Claude Desktop, 또는 공유 agentmemory 인스턴스를
+조회만 하는 두 번째 머신.
+
+이 모드에서는:
+
+- **`learning`**과 **`archive`** 훅이 완전히 스킵 (capture.ts가 없으면 데이터
+  소스 — file history, done actions — 가 비어있으므로)
+- **`enforcement`** directive에 자동 캡처가 안 된다는 강화 배너 추가
+  (`"strengthenDirective": false`로 끄기)
+- **`intent`** 훅이 `"autoSaveOnKeyword": true`일 때 "remember" 매칭 시
+  `memory_save` 직접 호출 (기본 `false` — LLM이 writer로 남음)
+
+자동 감지 (`"mode": "auto"`)는 첫 session.created 시 agentmemory 서버를
+probe; 최근 세션들이 평균 5개 미만의 observation을 가지면 `mcp-only`로
+전환. probe를 건너뛰려면 명시적으로 설정.
+
+### 헬스체크
+
+기본적으로 플러그인 init 시 `${url}/agentmemory/health`로 GET 핑.
+
+- 기본 (`healthCheckFatal: false`): 경고 로그 후 계속 실행 (훅들은
+  HTTP 호출을 조용히 실패)
+- `healthCheckFatal: true`: 훅을 반환하지 않아 사실상 비활성
 
 ---
 
