@@ -1,65 +1,181 @@
+<div align="center">
+
 # oh-my-agentmemory
 
-opencode plugin that makes your agent use [agentmemory](https://github.com/rohitg00/agentmemory) proactively.
+**Make your opencode agent actually use [agentmemory](https://github.com/rohitg00/agentmemory).**
 
-Companion to `agentmemory-capture.ts` (which passively observes opencode events). This plugin handles the **write side** — forcing the LLM to call memory tools, filling empty slots, detecting keywords, suggesting crystals, and auto-saving lessons from file edit history.
+Companion plugin to `agentmemory-capture.ts`. Capture already works —
+this plugin forces the agent to **write** to memory proactively.
+
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![opencode](https://img.shields.io/badge/opencode-%E2%89%A51.14-6E56CF.svg)](https://opencode.ai)
+[![agentmemory](https://img.shields.io/badge/agentmemory-%E2%89%A50.9.28-FF6B35.svg)](https://github.com/rohitg00/agentmemory)
+[![tests](https://img.shields.io/badge/tests-35%20passing-22C55E.svg)](./tests)
+[![phases](https://img.shields.io/badge/phases-5%20hooks-9333EA.svg)](#architecture)
+
+[English](./README.md) · [한국어](./README.ko.md)
+
+</div>
+
+---
 
 ## Why
 
-agentmemory ships 54 MCP tools and 22 capture hooks. Capture works great (50+ sessions auto-recorded). But the agent rarely calls `memory_save`, `memory_slot_replace`, `memory_lesson_save`, or `memory_crystallize` on its own. Empty slots, zero crystals, near-zero lessons — the write side stalls.
+agentmemory ships **54 MCP tools** and a rock-solid auto-capture plugin
+(`agentmemory-capture.ts`). Sessions get recorded. Semantic memories get
+generated. Insights get extracted. **The read side works.**
 
-This plugin fixes that with five hooks:
+But the **write side stalls**:
 
-| Phase | Hook | Effect |
+- The agent rarely calls `memory_save` on its own
+- Pinned slots (`persona`, `project_context`, `user_preferences`, `tool_guidelines`) sit empty for weeks
+- `memory_lesson_save` is almost never invoked
+- `memory_crystallize` never fires
+- Users type "remember this" and the agent says "ok" without saving
+
+You can write a `rules/memory.md` policy file, but the LLM may ignore it.
+This plugin turns that policy into a **per-turn directive** the model
+cannot miss — same pattern as caveman-mode reinforcement, applied to
+memory hygiene.
+
+### Before / after
+
+| Metric (per session) | Without oh-my-agentmemory | With oh-my-agentmemory |
 |---|---|---|
-| 1 | `experimental.chat.system.transform` | Per-turn directive push (policy summary + state flags) |
-| 2 | `event: session.created` | Bootstrap empty pinned slots from cwd-based project map |
-| 3 | `chat.message` | Detect "remember" / "기억해" / "forget" keywords → directive reinforcement |
-| 4 | `event: session.status(idle)` | Suggest `memory_crystallize` when ≥3 actions done |
-| 5 | `event: file.edited` | Auto-save lesson when file history shows repeated bug patterns |
+| Pinned slots filled | 0 of 4 | **4 of 4** (auto-bootstrap on session.created) |
+| `memory_save` calls | 0 | **1–3** (directive reinforced every turn) |
+| `memory_lesson_save` calls | 0 | **2–5** (auto-captured from file history) |
+| `memory_crystallize` calls | 0 | **occasional** (suggested when ≥3 actions done) |
+| "remember this" actually saved | ~30% | **~90%** (keyword detection → directive) |
 
-## Architecture
+Numbers are illustrative — actual lift depends on session shape. Phase 5
+auto-lesson is the largest contributor; phase 1 directive is the largest
+enabler of explicit `memory_save` calls.
 
-Hexagonal (ports & adapters) to keep cross-agent portability cheap.
+---
 
+## How it works
+
+Five hooks, each owning one slice of the write side. All coexist with
+`agentmemory-capture.ts` (which keeps doing passive observation).
+
+```mermaid
+flowchart LR
+    subgraph OC[opencode events]
+        SC[session.created]
+        CM[chat.message]
+        ST[system.transform<br/>every LLM turn]
+        SI[session.status idle]
+        FE[file.edited]
+    end
+
+    subgraph OH[oh-my-agentmemory]
+        P2[Phase 2<br/>bootstrap empty slots]
+        P3[Phase 3<br/>keyword detection]
+        P1[Phase 1<br/>per-turn directive]
+        P4[Phase 4<br/>crystal suggestion]
+        P5[Phase 5<br/>auto-lesson from history]
+    end
+
+    subgraph AM[agentmemory HTTP API]
+        SLOTS[/slot/replace]
+        OBSERVE[/observe]
+        LESSON[/lesson/save]
+    end
+
+    SC --> P2 --> SLOTS
+    CM --> P3 --> OBSERVE
+    ST --> P1
+    SI --> P4 --> OBSERVE
+    FE --> P5 --> LESSON
+    P3 -.queued intent.-> P1
+    P4 -.flag.-> P1
+    P2 -.cache invalidate.-> P1
 ```
-src/
-├── core/                  # agent-agnostic pure TS (no I/O, easily tested)
-│   ├── directives.ts      # buildDirective(ctx) → string
-│   ├── bootstrap.ts       # slot templates + detectProject(cwd)
-│   ├── keywords.ts        # KR/EN patterns
-│   ├── lessons.ts         # buildLessonFromFileHistory() → LessonCandidate
-│   ├── policy.ts          # rules/memory.md encoded as data
-│   └── types.ts
-└── adapters/
-    └── opencode/          # current; claude-code/codex later
-        ├── plugin.ts      # single entry, registers all hooks
-        ├── client.ts      # agentmemory HTTP wrapper
-        ├── hooks/
-        └── commands/      # /am-recall, /am-save, /am-bootstrap, /am-status
+
+| Phase | Hook | What it does |
+|---|---|---|
+| **1** | `experimental.chat.system.transform` | Pushes a policy directive into `output.system[]` every turn. Header + recall rules + write rules + crystal rules + state flags (empty slots, pending keywords, done-action count). Cached per-session to keep the hot path HTTP-free. |
+| **2** | `event: session.created` | Lists slots, finds empties among the four core pinned slots, fills them with templates derived from cwd (project map). Logs a `oh_am_bootstrap` observation. |
+| **3** | `chat.message` | Matches user text against bilingual patterns: "remember", "save this", "don't forget", "기억해", "저장해", "잊어". Queues matches for the next directive. |
+| **4** | `event: session.status` (idle) | When ≥3 actions are done, records a `oh_am_crystal_candidate` observation. The next directive surfaces the candidate IDs to the LLM. |
+| **5** | `event: file.edited` | Fetches the file's history, looks for error signals (`error`, `fail`, `bug`, `에러`, `실패`, …), skips if edit is tiny or no error pattern, dedupes against `lesson_recall`, then calls `lesson/save`. 5-min per-file history cache + 60-second per-file debounce. |
+
+### Sample directive (what the LLM sees every turn)
+
+```text
+AGENTMEMORY POLICY ACTIVE. Use agentmemory MCP tools proactively.
+Rules below override default behavior.
+---
+## Recall
+• Need past context (recent work, decisions, prior bugs)? Call memory_recall
+  or memory_smart_search BEFORE exploring files.
+• Pinned slots (persona, project_context, user_preferences, tool_guidelines,
+  pending_items, guidance) are auto-injected every turn — do NOT re-recall them.
+• Trivial tasks (single-file read, arithmetic, grep) skip memory calls.
+## Write
+• After architectural or non-obvious technical decisions, call memory_save with
+  the decision and concepts.
+• Discovered an effective or ineffective approach? Call memory_lesson_save with
+  what worked / what to avoid.
+• Project structure / build pipeline / new module added? Call memory_slot_replace
+  on project_context.
+• Unfinished work or follow-up promised? Call memory_slot_replace on pending_items.
+• Session about to end with loose ends? Call memory_slot_replace on guidance for
+  the next session.
+• Never claim 'memory updated' without an actual memory_* tool call in this turn.
+## Crystal
+• Three or more actions with status=done? Call memory_recall first to check for
+  an existing crystal, then memory_crystallize with the done action IDs.
+• Fewer than three done actions, or pure exploration with zero file changes →
+  skip crystallize.
+
+[STATE] Pinned slots empty: project_context, user_preferences. If session.created
+bootstrap missed them, fill via memory_slot_replace before session ends.
+
+[USER INTENT] User said: save:"remember this". Act on it via the matching memory_*
+tool this turn.
+---
+Pinned slots are already in your context — do not re-recall them. Calling memory_*
+without an actual tool call in this turn = false report (forbidden).
 ```
 
-Future agents (claude-code, codex) reuse `core/` as-is — only the adapter dir changes.
+Edit `src/core/policy.ts` to retune any rule. The directive is rebuilt
+automatically from data — no string-surgery required.
 
-## Install (local dev)
+---
+
+## Install
+
+### 1. Prerequisites
+
+- [opencode](https://opencode.ai) `≥1.14` (provides the
+  `experimental.chat.system.transform` hook)
+- [agentmemory](https://github.com/rohitg00/agentmemory) server running on
+  `http://localhost:3111`:
+  ```bash
+  npx @agentmemory/agentmemory
+  ```
+- [Bun](https://bun.sh) for plugin runtime + dev tooling
+
+### 2. Clone + install
 
 ```bash
-# 1. clone
-git clone git@github.com:dev-hann/oh-my-agentmemory.git ~/Documents/oh-my-agentmemory
+git clone https://github.com/dev-hann/oh-my-agentmemory.git ~/Documents/oh-my-agentmemory
 cd ~/Documents/oh-my-agentmemory
 bun install
-
-# 2. symlink into opencode plugins
-ln -s ~/Documents/oh-my-agentmemory/src/adapters/opencode \
-      ~/.config/opencode/plugins/oh-my-agentmemory
-
-# 3. register in opencode.json plugin[]
-# (see below)
-
-# 4. restart opencode
 ```
 
-`opencode.json` diff:
+### 3. Symlink into opencode's plugins dir
+
+```bash
+ln -sfn ~/Documents/oh-my-agentmemory/src/adapters/opencode \
+        ~/.config/opencode/plugins/oh-my-agentmemory
+```
+
+### 4. Register the plugin (alongside capture.ts)
+
+Edit `~/.config/opencode/opencode.json`:
 
 ```json
 {
@@ -70,32 +186,251 @@ ln -s ~/Documents/oh-my-agentmemory/src/adapters/opencode \
 }
 ```
 
-## Configuration
+Keep `agentmemory-capture.ts` — this plugin is **write-side only** and
+depends on capture.ts continuing to observe.
 
-Optional env vars (read by adapter):
+### 5. (Optional) Symlink slash commands
 
-| Var | Default | Effect |
-|---|---|---|
-| `AGENTMEMORY_URL` | `http://localhost:3111` | agentmemory server base URL |
-| `AGENTMEMORY_SECRET` | `""` | bearer token if auth enabled |
-| `OH_AM_DEBUG` | `0` | verbose stderr logging |
-| `OH_AM_DISABLE` | comma-list | e.g. `phase5,phase4` to disable specific hooks |
+```bash
+for f in am-recall am-save am-bootstrap am-status; do
+  ln -sfn ~/Documents/oh-my-agentmemory/src/adapters/opencode/commands/${f}.md \
+          ~/.config/opencode/commands/${f}.md
+done
+```
+
+### 6. Restart opencode
+
+Verify with `/am-status` — it should report pinned slots filled.
+
+---
 
 ## Slash commands
 
 | Command | Action |
 |---|---|
-| `/am-recall <query>` | Search past observations + lessons |
-| `/am-save <text>` | Save an insight to long-term memory |
-| `/am-bootstrap` | Force slot re-bootstrap now |
-| `/am-status` | Show slot fill state + recent memory/lesson counts |
+| `/am-recall <query>` | Search past observations + lessons via `memory_recall` |
+| `/am-save <text>` | Save an insight to long-term memory via `memory_save` |
+| `/am-bootstrap` | Force re-bootstrap empty slots right now (use when cwd project detection was wrong) |
+| `/am-status` | Show slot fill state + recent sessions + latest lessons + crystal candidates |
 
-## Requirements
+---
 
-- agentmemory server running (`npx @agentmemory/agentmemory`)
-- opencode 1.14+ (for `experimental.chat.system.transform` hook)
-- Bun (for plugin runtime + dev tooling)
+## Configuration
+
+All optional. Read from environment variables by the opencode adapter.
+
+| Var | Default | Effect |
+|---|---|---|
+| `AGENTMEMORY_URL` | `http://localhost:3111` | agentmemory server base URL |
+| `AGENTMEMORY_SECRET` | `""` | Bearer token if auth enabled on server |
+| `OH_AM_DEBUG` | `0` | Set to `1` for verbose stderr logging |
+| `OH_AM_DISABLE` | `""` | Comma-list of phases to disable, e.g. `phase3,phase5` |
+
+Example: `OH_AM_DEBUG=1 OH_AM_DISABLE=phase5 opencode`
+
+---
+
+## Architecture
+
+Hexagonal (ports & adapters). The `core/` layer is pure TypeScript with
+**zero I/O** — easy to unit-test, easy to port to other agents later.
+
+```
+oh-my-agentmemory/
+├── src/
+│   ├── core/                       # agent-agnostic, pure TS, no I/O
+│   │   ├── directives.ts           # buildDirective(ctx) → string
+│   │   ├── bootstrap.ts            # SLOT_TEMPLATES + detectProject(cwd)
+│   │   ├── keywords.ts             # KR/EN keyword patterns
+│   │   ├── lessons.ts              # buildLessonFromFileHistory() → LessonCandidate
+│   │   ├── policy.ts               # rules/memory.md encoded as data
+│   │   └── types.ts                # shared types
+│   │
+│   └── adapters/
+│       └── opencode/               # current; claude-code/codex later
+│           ├── plugin.ts           # single entry, registers all hooks
+│           ├── client.ts           # agentmemory HTTP wrapper
+│           ├── hooks/
+│           │   ├── system-transform.ts   # phase 1
+│           │   ├── session-created.ts    # phase 2
+│           │   ├── chat-message.ts       # phase 3
+│           │   ├── session-idle.ts       # phase 4
+│           │   └── file-edited.ts        # phase 5
+│           └── commands/
+│               ├── am-recall.md
+│               ├── am-save.md
+│               ├── am-bootstrap.md
+│               └── am-status.md
+│
+└── tests/
+    └── core/                       # 35 unit tests (no network)
+        ├── directives.test.ts
+        ├── keywords.test.ts
+        └── bootstrap.test.ts
+```
+
+### Future agents
+
+`adapters/claude-code/` and `adapters/codex/` will reuse `core/`
+unchanged — only the hook glue differs. The hexagonal split keeps the
+porting cost down to "write one adapter file per agent."
+
+---
+
+## Testing
+
+```bash
+bun install
+bun run test            # vitest, 35 tests, ~600ms
+bun run typecheck       # tsc --noEmit, strict mode
+```
+
+All tests target `core/` — pure functions, deterministic, no network.
+Adapter behavior is verified manually against a running agentmemory
+server.
+
+---
+
+## Comparison
+
+| | Built-in (CLAUDE.md / rules/) | `agentmemory-capture.ts` | **oh-my-agentmemory** |
+|---|---|---|---|
+| Layer | Static policy file | Plugin (read side) | **Plugin (write side)** |
+| Captures observations | No | Yes (22+ hooks) | No (capture.ts does it) |
+| Forces LLM to call `memory_save` | Honor system | No | **Yes (per-turn directive)** |
+| Fills empty slots | No | No | **Yes (cwd-based bootstrap)** |
+| Reacts to "remember" / "기억해" | No | No | **Yes (keyword detection)** |
+| Auto-saves lessons from bug history | No | No | **Yes (file.edited hook)** |
+| Suggests `memory_crystallize` | No | No | **Yes (idle + done ≥3)** |
+| Cloud dependency | None | None | None |
+| Cost | $0 | $0 | $0 |
+
+This plugin is **complementary**, not competitive, with capture.ts.
+Disable either one and you lose half the loop.
+
+### vs opencode-supermemory
+
+[opencode-supermemory](https://github.com/supermemoryai/opencode-supermemory)
+is the right choice if you want cloud-hosted memory, Notion/Drive
+connectors, auto user-profiles, and a one-line install.
+
+oh-my-agentmemory is the right choice if you:
+
+- Already run agentmemory locally and have invested in 50+ sessions of data
+- Want to keep everything self-hosted (no cloud, no API keys)
+- Need agentmemory's 54-MCP-tool surface (slots, lessons, crystals, actions,
+  insights, consolidation pipeline) rather than supermemory's 3
+- Prefer "directive reinforcement" over "automatic API-side extraction"
+
+Both plugins can coexist — they push to different memory systems.
+
+---
+
+## Troubleshooting
+
+<details>
+<summary><b>Directive doesn't appear in the system prompt</b></summary>
+
+1. Confirm plugin loaded: check opencode logs for `[oh-am] plugin loaded` (with `OH_AM_DEBUG=1`)
+2. Confirm `opencode.json` has both entries (capture.ts AND oh-my-am/plugin.ts)
+3. Confirm symlink target exists: `ls -la ~/.config/opencode/plugins/oh-my-agentmemory/plugin.ts`
+4. Confirm agentmemory server is up: `curl http://localhost:3111/agentmemory/health`
+
+</details>
+
+<details>
+<summary><b>Slots stay empty after session.created</b></summary>
+
+1. Run `/am-bootstrap` to force re-bootstrap and see proposed content
+2. Check `OH_AM_DEBUG=1` for `[oh-am] bootstrap filled N/N slots`
+3. If detection picks the wrong project, add your cwd to `PROJECT_MAP` in `src/core/bootstrap.ts`
+4. Phase 2 may be disabled via `OH_AM_DISABLE=phase2`
+
+</details>
+
+<details>
+<summary><b>Too many lessons being saved (Phase 5 noise)</b></summary>
+
+Phase 5 is conservative by default — it requires both an error signal in
+file history AND a meaningful edit size. If still too noisy:
+
+1. Disable temporarily: `OH_AM_DISABLE=phase5`
+2. Tune filters in `src/core/lessons.ts`:
+   - Raise `MIN_EDIT_LINES` (default 5)
+   - Add exclude patterns to skip test files or generated code
+   - Expand `ERROR_KEYWORDS` to be more specific
+
+</details>
+
+<details>
+<summary><b>Directive is too verbose / hurts token budget</b></summary>
+
+The directive body is ~600 tokens. To shrink:
+
+1. Edit `src/core/policy.ts` — shorten rule texts
+2. Or use compact mode by editing `system-transform.ts` to call `buildDirective(ctx, { compact: true })` — this drops the rule bodies and keeps only state/keyword lines
+
+</details>
+
+<details>
+<summary><b>Conflict with caveman or other plugins</b></summary>
+
+opencode runs all plugins' hooks in sequence. Multiple plugins can push
+to `output.system[]` without conflict — caveman pushes its reinforcement
+line, oh-my-am pushes its directive, both reach the LLM.
+
+</details>
+
+---
+
+## Development
+
+```bash
+git clone https://github.com/dev-hann/oh-my-agentmemory.git
+cd oh-my-agentmemory
+bun install
+bun run test         # 35 unit tests
+bun run typecheck    # strict TS
+```
+
+The `core/` layer has no I/O — every function is testable in isolation.
+Adapter tests require a running agentmemory server.
+
+### Roadmap
+
+- **Phase 6** — `using-agentmemory` opencode Skill (auto-loaded by opencode
+  when relevant, stronger than directive)
+- **Phase 7** — `adapters/claude-code/` (`.claude/settings.json` hook scripts
+  that invoke `core/`)
+- **Phase 8** — `adapters/codex/` (Codex hook format)
+- **Phase 9** — npm publish + `bunx oh-my-agentmemory install --agent X` CLI
+
+Contributions welcome. Open an issue first to discuss scope.
+
+---
+
+## Uninstall
+
+```bash
+# Remove from opencode.json plugin[]
+# Remove symlinks
+rm ~/.config/opencode/plugins/oh-my-agentmemory
+rm ~/.config/opencode/commands/am-{recall,save,bootstrap,status}.md
+# Optionally remove the source tree
+rm -rf ~/Documents/oh-my-agentmemory
+```
+
+Your agentmemory data is untouched — only the directive plugin is removed.
+
+---
 
 ## License
 
-MIT
+[MIT](./LICENSE) © dev-hann
+
+## Acknowledgments
+
+- [agentmemory](https://github.com/rohitg00/agentmemory) — the memory engine this plugin drives
+- [agentmemory-capture.ts](https://github.com/rohitg00/agentmemory/blob/main/plugin/opencode/agentmemory-capture.ts) — the canonical observer plugin this complements
+- [opencode-supermemory](https://github.com/supermemoryai/opencode-supermemory) — reference implementation for keyword detection and reasoned-recall directive patterns
+- [caveman](https://github.com/JuliusBrussee/caveman) — reference implementation for per-turn system.transform reinforcement
