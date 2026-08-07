@@ -1,0 +1,21 @@
+{
+  "name": "oh-my-agentmemory",
+  "version": "0.1.0",
+  "private": true,
+  "description": "opencode plugin enforcing agentmemory proactive use via per-turn directives, slot bootstrap, keyword detection, crystal suggestions, and auto-lesson capture",
+  "type": "module",
+  "main": "./src/adapters/opencode/plugin.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "latest",
+    "@types/node": "^26.1.2",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  }
+}
