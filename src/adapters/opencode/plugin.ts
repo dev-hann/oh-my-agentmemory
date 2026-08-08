@@ -71,6 +71,40 @@ export const OhMyAgentmemoryPlugin: Plugin = async (ctx) => {
       );
     },
 
+    // ── learning: auto lesson capture on file edit ────────────────────────
+    // Primary path is tool.execute.after (fires reliably). The legacy
+    // event:file.edited handler below is kept as a backup in case opencode
+    // emits those events in some configurations.
+    "tool.execute.after": async (input) => {
+      const tool = ((input as { tool?: string }).tool ?? "").toLowerCase();
+      if (tool !== "edit" && tool !== "write") return;
+      const sessionId = (input as { sessionID?: string }).sessionID;
+      if (!sessionId) return;
+      const args = (input as { args?: Record<string, unknown> }).args;
+      if (!args) return;
+      const filePath = pickFilePath(args as FileEditedProperties);
+      if (!filePath) return;
+
+      let additions = 0;
+      let deletions = 0;
+      const ns = args.newString;
+      const os = args.oldString;
+      if (typeof ns === "string" && typeof os === "string") {
+        additions = ns.split("\n").length;
+        deletions = os.split("\n").length;
+      } else if (typeof args.content === "string") {
+        additions = args.content.split("\n").length;
+      }
+
+      await onFileEdited({
+        sessionId,
+        project,
+        filePath,
+        additions,
+        deletions,
+      });
+    },
+
     // ── init / archive / learning: session + file lifecycle events ────────
     event: async ({ event }: { event?: OpencodeEvent } = {}) => {
       if (!event) return;

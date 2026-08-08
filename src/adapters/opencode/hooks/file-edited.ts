@@ -104,59 +104,65 @@ export async function onFileEdited(params: {
   };
 
   const candidate = buildLessonFromFileHistory(filePath, history, edit);
-  if (!candidate.shouldSave) {
-    if (DEBUG) {
-      console.error(
-        `[oh-am] ${filePath} skipped: ${candidate.skipReason ?? "no-reason"}`,
-      );
-    }
-    return;
-  }
 
-  // Dedupe against existing lessons with a similar query.
+  // Dedupe against existing lessons (only meaningful when saving).
   let existing: Array<{ id: string; content: string; confidence: number }> = [];
-  try {
-    existing = await recallLessons(candidate.duplicateQuery, 5);
-  } catch (e) {
-    if (DEBUG)
-      console.error(
-        `[oh-am] lesson recall failed, proceeding with save:`,
-        (e as Error).message,
-      );
-  }
+  if (candidate.shouldSave) {
+    try {
+      existing = await recallLessons(candidate.duplicateQuery, 5);
+    } catch (e) {
+      if (DEBUG)
+        console.error(
+          `[oh-am] lesson recall failed, proceeding with save:`,
+          (e as Error).message,
+        );
+    }
 
-  if (existing.length > 0) {
-    // Duplicate content auto-strengthens per agentmemory API behavior.
-    // We still save — agentmemory dedupes internally — but at lower confidence.
-    if (DEBUG) {
-      console.error(
-        `[oh-am] ${filePath} existing lesson found (id=${existing[0].id}), saving duplicate for reinforcement`,
-      );
+    if (existing.length > 0) {
+      // Duplicate content auto-strengthens per agentmemory API behavior.
+      // We still save — agentmemory dedupes internally — but at lower confidence.
+      if (DEBUG) {
+        console.error(
+          `[oh-am] ${filePath} existing lesson found (id=${existing[0].id}), saving duplicate for reinforcement`,
+        );
+      }
     }
   }
 
-  const ok = await saveLesson(
-    candidate.content,
-    candidate.tags,
-    candidate.confidence,
-    project ?? undefined,
-  );
+  let saved = false;
+  if (candidate.shouldSave) {
+    saved = await saveLesson(
+      candidate.content,
+      candidate.tags,
+      candidate.confidence,
+      project ?? undefined,
+    );
+  }
 
+  // Always observe — records that the hook fired even when skipping the save,
+  // so the learning phase is debuggable without OH_AM_DEBUG.
   await observe(sessionId, "oh_am_lesson_auto", project, {
     filePath,
     additions: edit.additions,
     deletions: edit.deletions,
     historyEntries: history.length,
     duplicateCount: existing.length,
-    saved: ok,
+    shouldSave: candidate.shouldSave,
+    saved,
     skipReason: candidate.skipReason ?? null,
     preview: candidate.content.slice(0, 200),
   });
 
   if (DEBUG) {
-    console.error(
-      `[oh-am] ${filePath} lesson ${ok ? "saved" : "save-failed"} (history=${history.length} dupes=${existing.length})`,
-    );
+    if (candidate.shouldSave) {
+      console.error(
+        `[oh-am] ${filePath} lesson ${saved ? "saved" : "save-failed"} (history=${history.length} dupes=${existing.length})`,
+      );
+    } else {
+      console.error(
+        `[oh-am] ${filePath} skipped: ${candidate.skipReason ?? "no-reason"}`,
+      );
+    }
   }
 }
 

@@ -81,9 +81,9 @@ flowchart LR
     end
 
     subgraph AM[agentmemory HTTP API]
-        SLOTS[/slot/replace]
-        OBSERVE[/observe]
-        LESSON[/lesson/save]
+        SLOTS[slot / replace]
+        OBSERVE[observe]
+        LESSON[lesson / save]
     end
 
     SC --> INIT --> SLOTS

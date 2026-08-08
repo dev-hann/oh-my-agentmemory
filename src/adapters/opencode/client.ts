@@ -134,14 +134,12 @@ interface SlotListResponse {
 }
 
 export async function listSlots(): Promise<Slot[]> {
-  const r = await postJson<SlotListResponse>("/slot/list", {});
+  const r = await getJson<SlotListResponse>("/slots");
   return r?.slots ?? [];
 }
 
 export async function getSlot(label: SlotLabel): Promise<Slot | null> {
-  const r = await postJson<{ slot?: Slot; success?: boolean }>("/slot/get", {
-    label,
-  });
+  const r = await getJson<{ slot?: Slot; success?: boolean }>("/slot", { label });
   return r?.slot ?? null;
 }
 
@@ -188,18 +186,34 @@ export async function getRecentSessions(limit = 10): Promise<SessionRow[]> {
 
 // ── File history ───────────────────────────────────────────────────────────
 
-interface FileHistoryResponse {
-  observations?: FileHistoryEntry[];
+/**
+ * Parse a `<agentmemory-file-context>` prompt string into structured entries.
+ * Each observation line has the shape: `- [TYPE] Title: Narrative`.
+ * The tool_output field carries the full "Title: Narrative" so that
+ * buildLessonFromFileHistory's error-signal scan can match keywords.
+ */
+function parseFileContext(context: string): FileHistoryEntry[] {
+  if (typeof context !== "string" || context.length === 0) return [];
+  const entries: FileHistoryEntry[] = [];
+  for (const line of context.split("\n")) {
+    const m = line.match(/^-\s+\[([^\]]+)\]\s*(.*)$/);
+    if (!m) continue;
+    entries.push({
+      sessionId: "",
+      timestamp: "",
+      data: { tool_name: m[1], tool_output: m[2] },
+    });
+  }
+  return entries;
 }
 
 export async function getFileHistory(
   filePath: string,
-  sessionId?: string,
+  _sessionId?: string,
 ): Promise<FileHistoryEntry[]> {
-  const body: Record<string, unknown> = { files: filePath };
-  if (sessionId) body.sessionId = sessionId;
-  const r = await postJson<FileHistoryResponse>("/file-history", body);
-  return r?.observations ?? [];
+  const body: Record<string, unknown> = { files: [filePath] };
+  const r = await postJson<{ context?: string }>("/file-context", body);
+  return parseFileContext(r?.context ?? "");
 }
 
 // ── Lessons ────────────────────────────────────────────────────────────────
@@ -212,7 +226,7 @@ export async function recallLessons(
   query: string,
   limit = 5,
 ): Promise<NonNullable<LessonRecallResponse["lessons"]>> {
-  const r = await postJson<LessonRecallResponse>("/lesson/recall", {
+  const r = await postJson<LessonRecallResponse>("/lessons/search", {
     query,
     limit,
   });
@@ -227,25 +241,7 @@ export async function saveLesson(
 ): Promise<boolean> {
   const body: Record<string, unknown> = { content, tags, confidence };
   if (project) body.project = project;
-  return postVoid("/lesson/save", body);
-}
-
-// ── Long-term memory save (for intent autoSaveOnKeyword) ───────────────────
-
-export async function saveMemory(params: {
-  content: string;
-  concepts?: string;
-  type?:
-    | "pattern"
-    | "preference"
-    | "architecture"
-    | "bug"
-    | "workflow"
-    | "fact";
-  files?: string;
-  project?: string;
-}): Promise<boolean> {
-  return postVoid("/save", params as unknown as Record<string, unknown>);
+  return postVoid("/lessons", body);
 }
 
 // ── Crystal ────────────────────────────────────────────────────────────────
@@ -260,7 +256,7 @@ export async function crystallize(
   };
   if (project) body.project = project;
   if (sessionId) body.sessionId = sessionId;
-  return postVoid("/crystallize", body, 15000);
+  return postVoid("/crystals/create", body, 15000);
 }
 
 // ── Observe (for plugin self-tracking) ─────────────────────────────────────
