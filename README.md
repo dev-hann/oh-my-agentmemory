@@ -277,7 +277,7 @@ Create `~/.config/opencode/oh-am.jsonc`:
   // named profiles for multi-instance switching
   "profiles": {
     "local":  { "url": "http://localhost:3111" },
-    "remote": { "url": "https://am.fly.dev", "secret": "sm_xxx" }
+    "remote": { "url": "https://agentmemory.example.com", "secret": "sm_xxx" }
   },
   "activeProfile": "local",
 

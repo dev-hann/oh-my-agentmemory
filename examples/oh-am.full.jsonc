@@ -53,7 +53,7 @@
   // Env vars still win over the active profile.
   "profiles": {
     "local":  { "url": "http://localhost:3111" },
-    "remote": { "url": "https://am.fly.dev", "secret": "sm_xxxxxxxxxxxx" },
+    "remote": { "url": "https://agentmemory.example.com", "secret": "sm_xxxxxxxxxxxx" },
     "team":   { "url": "https://team-am.internal", "secret": "sm_team_xxx" }
   },
   "activeProfile": "local",

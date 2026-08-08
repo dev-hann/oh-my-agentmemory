@@ -7,15 +7,15 @@ import type { FileEditEvent, FileHistoryEntry } from "../../src/core/types.js";
 import { buildLessonFromFileHistory } from "../../src/core/lessons.js";
 
 describe("detectProject", () => {
-  it("matches known langdy-student", () => {
-    const d = detectProject("/Users/x/Documents/langdy-student-v3");
-    expect(d.projectId).toBe("langdy-student");
-    expect(d.stack).toContain("Next.js");
+  it("matches built-in my-app entry", () => {
+    const d = detectProject("/Users/x/work/my-app");
+    expect(d.projectId).toBe("my-app");
+    expect(d.stack).toContain("React");
   });
 
-  it("matches known langdy-figma-plugins", () => {
-    const d = detectProject("/Users/x/work/langdy-figma-plugins");
-    expect(d.projectId).toBe("langdy-figma-plugins");
+  it("matches built-in my-api entry", () => {
+    const d = detectProject("/Users/x/work/my-api");
+    expect(d.projectId).toBe("my-api");
   });
 
   it("falls back to basename", () => {
@@ -32,7 +32,7 @@ describe("buildBootstrapUpdates", () => {
 
   it("fills all four core slots when empty", () => {
     const updates = buildBootstrapUpdates(
-      "/Users/x/Documents/langdy-student-v3",
+      "/Users/x/work/my-app",
       ["persona", "project_context", "user_preferences", "tool_guidelines"],
     );
     expect(updates).toHaveLength(4);
@@ -56,10 +56,10 @@ describe("buildBootstrapUpdates", () => {
 
   it("injects detected project name into project_context", () => {
     const updates = buildBootstrapUpdates(
-      "/Users/x/Documents/langdy-student-v3",
+      "/Users/x/work/my-app",
       ["project_context"],
     );
-    expect(updates[0].content).toContain("langdy student app");
+    expect(updates[0].content).toContain("my app");
   });
 });
 

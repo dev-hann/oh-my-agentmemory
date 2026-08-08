@@ -267,7 +267,7 @@ cp ~/Documents/oh-my-agentmemory/examples/oh-am.full.jsonc \
   // 다중 인스턴스 전환을 위한 프로필
   "profiles": {
     "local":  { "url": "http://localhost:3111" },
-    "remote": { "url": "https://am.fly.dev", "secret": "sm_xxx" }
+    "remote": { "url": "https://agentmemory.example.com", "secret": "sm_xxx" }
   },
   "activeProfile": "local",
 

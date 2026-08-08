@@ -83,6 +83,34 @@ async function postVoid(
   }
 }
 
+async function getJson<T = unknown>(
+  path: string,
+  params?: Record<string, string | number>,
+  timeoutMs = 4000,
+): Promise<T | null> {
+  try {
+    let url = `${apiBase()}/agentmemory${path}`;
+    if (params) {
+      const qs = new URLSearchParams();
+      for (const [k, v] of Object.entries(params)) qs.set(k, String(v));
+      url += `?${qs.toString()}`;
+    }
+    const res = await fetch(url, {
+      method: "GET",
+      headers: headers(),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) {
+      if (DEBUG_ENV) console.error(`[oh-am] GET ${path} → ${res.status}`);
+      return null;
+    }
+    return (await res.json()) as T;
+  } catch (e) {
+    if (DEBUG_ENV) console.error(`[oh-am] GET ${path} failed:`, (e as Error).message);
+    return null;
+  }
+}
+
 // ── Health ─────────────────────────────────────────────────────────────────
 
 export async function healthCheck(timeoutMs = 2000): Promise<boolean> {
@@ -137,7 +165,7 @@ interface FrontierResponse {
 }
 
 export async function getDoneActions(limit = 25): Promise<Action[]> {
-  const r = await postJson<FrontierResponse>("/frontier", { limit });
+  const r = await getJson<FrontierResponse>("/actions", { status: "done", limit });
   const actions = r?.actions ?? [];
   return actions.filter((a) => a.status === "done");
 }
@@ -153,7 +181,7 @@ interface SessionsResponse {
 }
 
 export async function getRecentSessions(limit = 10): Promise<SessionRow[]> {
-  const r = await postJson<SessionsResponse>("/sessions", {});
+  const r = await getJson<SessionsResponse>("/sessions", { limit });
   const sessions = r?.sessions ?? [];
   return sessions.slice(0, limit);
 }

@@ -13,7 +13,7 @@ export interface SlotUpdate {
 }
 
 export interface ProjectDetection {
-  /** Stable identifier for project_context slot, e.g. "langdy-student". */
+  /** Stable identifier for project_context slot, e.g. "my-app". */
   projectId: string;
   /** Human-readable project name shown to the LLM. */
   displayName: string;
@@ -22,51 +22,30 @@ export interface ProjectDetection {
 }
 
 /**
- * Cwd → project mapping. Extend this map to add new projects.
- * Falls back to basename of cwd when no entry matches.
+ * Cwd → project mapping. Extend via `oh-am.jsonc` `projectMap` (mode: "merge"
+ * prepends user entries so they win over these built-ins). Falls back to
+ * basename of cwd when no entry matches.
+ *
+ * Built-ins are illustrative only — add your real projects to the config.
  */
 const PROJECT_MAP: Array<{
   match: RegExp;
   detection: ProjectDetection;
 }> = [
   {
-    match: /langdy-student/i,
+    match: /my-app/i,
     detection: {
-      projectId: "langdy-student",
-      displayName: "langdy student app",
-      stack: ["Next.js", "TypeScript", "React", "tailwind"],
+      projectId: "my-app",
+      displayName: "my app",
+      stack: ["TypeScript", "React"],
     },
   },
   {
-    match: /langdy-admin/i,
+    match: /my-api/i,
     detection: {
-      projectId: "langdy-admin",
-      displayName: "langdy admin dashboard",
-      stack: ["React", "TypeScript", "admin"],
-    },
-  },
-  {
-    match: /langdy-app/i,
-    detection: {
-      projectId: "langdy-app",
-      displayName: "langdy app (RN/Expo)",
-      stack: ["React Native", "Expo", "TypeScript"],
-    },
-  },
-  {
-    match: /langdy-figma-plugins?/i,
-    detection: {
-      projectId: "langdy-figma-plugins",
-      displayName: "langdy figma plugins monorepo",
-      stack: ["TypeScript", "Figma Plugin API", "Bun", "monorepo"],
-    },
-  },
-  {
-    match: /frontend-code-test-review/i,
-    detection: {
-      projectId: "frontend-code-test-review",
-      displayName: "frontend code test review",
-      stack: ["Next.js", "TypeScript", "FSD"],
+      projectId: "my-api",
+      displayName: "my API service",
+      stack: ["Go", "Postgres"],
     },
   },
 ];
