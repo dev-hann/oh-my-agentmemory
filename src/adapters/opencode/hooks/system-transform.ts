@@ -21,7 +21,7 @@ import {
   listSlots,
   emptySlotLabels,
 } from "../client.js";
-import { getConfig, isMcpOnly } from "./_shared.js";
+import { isMcpOnly, getConfig } from "./_shared.js";
 
 const DEBUG = process.env.OH_AM_DEBUG === "1";
 
@@ -83,7 +83,6 @@ export const systemTransformHook: NonNullable<
   // Drain whatever the chat-message hook queued for this turn.
   const pendingKeywords = drainSessionKeywords(sessionId);
   const mcpOnly = isMcpOnly();
-  const cfg = getConfig();
   const ctx = buildCtx(state, pendingKeywords, disabled, mcpOnly);
 
   const cacheKey = `${sessionId}::${directiveCacheKey(ctx)}`;
@@ -94,7 +93,7 @@ export const systemTransformHook: NonNullable<
   }
 
   const directive = buildDirective(ctx, {
-    mcpOnly: mcpOnly && cfg.mcpOnly.strengthenDirective,
+    mcpOnly,
   });
   sessionDirectiveCache.set(sessionId, directive);
   sessionDirectiveCache.set(cacheKey, directive);

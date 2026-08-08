@@ -115,35 +115,6 @@ describe("mergeConfig", () => {
     expect(r.sources.mode).toBe("env");
   });
 
-  it("active profile fills url when nothing else does", () => {
-    const cfg: OhAmConfig = {
-      url: undefined,
-      profiles: {
-        remote: { url: "http://remote:1", secret: "s" },
-      },
-      activeProfile: "remote",
-    };
-    const r = mergeConfig(cfg, {});
-    expect(r.url).toBe("http://remote:1");
-    expect(r.secret).toBe("s");
-  });
-
-  it("active profile loses when env var is set", () => {
-    const cfg: OhAmConfig = {
-      profiles: { remote: { url: "http://remote:1" } },
-      activeProfile: "remote",
-    };
-    const r = mergeConfig(cfg, { AGENTMEMORY_URL: "http://env:1" });
-    expect(r.url).toBe("http://env:1");
-  });
-
-  it("mcpOnly sub-options come from config", () => {
-    const cfg: OhAmConfig = { mcpOnly: { autoSaveOnKeyword: true } };
-    const r = mergeConfig(cfg, {});
-    expect(r.mcpOnly.autoSaveOnKeyword).toBe(true);
-    expect(r.mcpOnly.strengthenDirective).toBe(true); // default
-  });
-
   it("OH_AM_DEBUG=1 wins over config.debug=false", () => {
     const cfg: OhAmConfig = { debug: false };
     const r = mergeConfig(cfg, { OH_AM_DEBUG: "1" });

@@ -204,8 +204,8 @@ done
 ### 6. (Optional) Create a config file
 
 Defaults work out of the box (localhost agentmemory, auto mode). For
-persistent settings — remote server, profiles, custom project map,
-policy overrides — create `~/.config/opencode/oh-am.jsonc`:
+persistent settings — remote server, custom project map,
+health-check tuning — create `~/.config/opencode/oh-am.jsonc`:
 
 ```bash
 cp ~/Documents/oh-my-agentmemory/examples/oh-am.full.jsonc \
@@ -268,20 +268,7 @@ Create `~/.config/opencode/oh-am.jsonc`:
   // purpose names to disable
   "disabled": ["learning"],
 
-  // MCP-only sub-options (only used when mode resolves to "mcp-only")
-  "mcpOnly": {
-    "strengthenDirective": true,
-    "autoSaveOnKeyword": false
-  },
-
-  // named profiles for multi-instance switching
-  "profiles": {
-    "local":  { "url": "http://localhost:3111" },
-    "remote": { "url": "https://agentmemory.example.com", "secret": "sm_xxx" }
-  },
-  "activeProfile": "local",
-
-  // extend built-in project map without code edit
+  // extend built-in project map without code edit (always prepended)
   "projectMap": [
     {
       "match": "my-new-project",
@@ -290,15 +277,6 @@ Create `~/.config/opencode/oh-am.jsonc`:
       "stack": ["Go", "Postgres"]
     }
   ],
-  "projectMapMode": "merge",    // "merge" (prepend) | "replace"
-
-  // policy text overrides (omit to keep built-in defaults)
-  "policy": {
-    // "header": "AGENTMEMORY POLICY ACTIVE.",
-    // "recall": [{ "id": "custom", "text": "..." }],
-    // "write": [],
-    // "crystal": []
-  },
 
   // health check on plugin init
   "healthCheckOnBoot": true,
@@ -323,9 +301,8 @@ In this mode:
 - **`learning`** and **`archive`** hooks skip entirely (their data sources
   — file history, done actions — are empty without capture.ts)
 - **`enforcement`** directive gains a stronger banner warning the LLM that
-  no auto-capture is running (disable with `"strengthenDirective": false`)
-- **`intent`** hook can call `memory_save` directly on `"remember"` matches
-  when `"autoSaveOnKeyword": true` (default `false` — LLM stays the writer)
+  no auto-capture is running, and the write responsibilities shift to it
+  entirely
 
 Auto-detection (`"mode": "auto"`) probes the agentmemory server on first
 session.created; if recent sessions average <5 observations each it
@@ -353,11 +330,15 @@ oh-my-agentmemory/
 │   ├── core/                       # agent-agnostic, pure TS, no I/O
 │   │   ├── directives.ts           # buildDirective(ctx) → string
 │   │   ├── bootstrap.ts            # SLOT_TEMPLATES + detectProject(cwd)
-│   │   ├── keywords.ts             # KR/EN keyword patterns
+│   │   ├── keywords.ts             # pattern loader + matchKeywords()
 │   │   ├── lessons.ts              # buildLessonFromFileHistory() → LessonCandidate
 │   │   ├── policy.ts               # rules/memory.md encoded as data
 │   │   ├── config-types.ts         # OhAmConfig + ResolvedConfig types
 │   │   └── types.ts                # shared types
+│   │
+│   ├── data/                       # locale-keyed keyword / signal data
+│   │   ├── keywords.ts             # save / forget / recall patterns per locale
+│   │   └── error-signals.ts        # error keywords per locale (lessons filter)
 │   │
 │   └── adapters/
 │       └── opencode/               # current; claude-code/codex later
@@ -425,7 +406,7 @@ a running agentmemory server.
 | Auto-saves lessons from bug history | No | No | **Yes (file.edited hook)** |
 | Suggests `memory_crystallize` | No | No | **Yes (idle + done ≥3)** |
 | Config file | n/a | env vars only | **`oh-am.jsonc` (JSONC) + env vars** |
-| Profiles (multi-instance switch) | n/a | No | **Yes (`profiles` + `activeProfile`)** |
+| Profiles (multi-instance switch) | n/a | No | No |
 | MCP-only mode branching | n/a | No | **Yes (auto-detect or explicit)** |
 | Health check on init | n/a | No | **Yes (optional self-disable)** |
 | Cloud dependency | None | None | None |
@@ -494,7 +475,7 @@ file history AND a meaningful edit size. If still too noisy:
 2. Tune filters in `src/core/lessons.ts`:
    - Raise `MIN_EDIT_LINES` (default 5)
    - Add exclude patterns to skip test files or generated code
-   - Expand `ERROR_KEYWORDS` to be more specific
+   - Edit `src/data/error-signals.ts` to expand or narrow error keywords
 
 </details>
 
@@ -503,11 +484,9 @@ file history AND a meaningful edit size. If still too noisy:
 
 The directive body is ~600 tokens. To shrink:
 
-1. Drop a section entirely via config (no code edit): set e.g.
-   `"policy": { "crystal": [] }` in `oh-am.jsonc` to remove crystal rules
-2. Override header/footer text via `"policy": { "header": "...", "footer": null }`
-3. Edit `src/core/policy.ts` to shorten rule texts
-4. Or use compact mode by editing `system-transform.ts` to call
+1. Edit `src/core/policy.ts` to shorten rule texts (or drop sections by
+   removing entries from `RECALL_POLICY` / `WRITE_POLICY` / `CRYSTAL_POLICY`)
+2. Or use compact mode by editing `system-transform.ts` to call
    `buildDirective(ctx, { compact: true })` — this drops the rule bodies
    and keeps only state/keyword lines
 

@@ -21,7 +21,8 @@
   //
   // "auto"      — probe agentmemory on session.created, decide full vs mcp-only
   // "full"      — assume capture.ts is loaded; never probe
-  // "mcp-only"  — assume capture.ts NOT loaded; skip learning/archive hooks
+  // "mcp-only"  — assume capture.ts NOT loaded; skip learning/archive hooks,
+  //               enforcement directive strengthens to compensate
   //
   // Env OH_AM_MODE wins.
   "mode": "auto",
@@ -32,40 +33,12 @@
   // Valid: "enforcement" | "init" | "intent" | "archive" | "learning"
   "disabled": [],
 
-  // ─── MCP-only sub-options ──────────────────────────────────────────
-  //
-  // Only consulted when mode resolves to "mcp-only".
-  "mcpOnly": {
-    // Push a stronger directive every turn reminding the LLM that no
-    // auto-capture is running. Default true.
-    "strengthenDirective": true,
-
-    // When the intent hook detects "remember" / "save this" keywords,
-    // call memory_save directly instead of queueing for the directive.
-    // Default false (LLM stays the writer — safer).
-    "autoSaveOnKeyword": false,
-  },
-
-  // ─── named profiles ────────────────────────────────────────────────
-  //
-  // Quick switch between agentmemory instances (local dev / cloud / team).
-  // activeProfile selects which entry's url/secret fill the defaults.
-  // Env vars still win over the active profile.
-  "profiles": {
-    "local":  { "url": "http://localhost:3111" },
-    "remote": { "url": "https://agentmemory.example.com", "secret": "sm_xxxxxxxxxxxx" },
-    "team":   { "url": "https://team-am.internal", "secret": "sm_team_xxx" }
-  },
-  "activeProfile": "local",
-
   // ─── bootstrap project map ─────────────────────────────────────────
   //
-  // Extend (prepend) or replace the built-in PROJECT_MAP in
-  // src/core/bootstrap.ts. Each entry is matched against the cwd at
-  // session.created; the first match wins.
-  //
-  // "merge" mode: user entries checked first, then built-ins.
-  // "replace" mode: ignore built-ins entirely.
+  // Extend the built-in PROJECT_MAP in src/core/bootstrap.ts.
+  // User entries are always prepended (checked first); built-ins are the
+  // fallback. Each entry is matched against the cwd at session.created;
+  // the first match wins.
   "projectMap": [
     {
       "match": "my-cool-app",        // RegExp source, matched against cwd
@@ -80,20 +53,6 @@
       "stack": ["Python", "Airflow", "Snowflake"]
     }
   ],
-  "projectMapMode": "merge",
-
-  // ─── policy text overrides ────────────────────────────────────────
-  //
-  // Replace any section of the directive built by src/core/policy.ts.
-  // Omit a field to keep built-in defaults; set to null / empty array
-  // to drop that section entirely.
-  "policy": {
-    // "header": "AGENTMEMORY POLICY ACTIVE.",   // override text
-    // "footer": null,                            // drop entirely
-    // "recall": [ { "id": "custom-1", "text": "Always recall first." } ],
-    // "write": [],
-    // "crystal": []
-  },
 
   // ─── health check ──────────────────────────────────────────────────
   //

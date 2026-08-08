@@ -1,10 +1,12 @@
 /**
  * Keyword detection — bilingual (Korean + English) intent patterns.
  *
- * Pure function: takes a string, returns matches. Adapters wire this into
- * the chat-message hook and forward matches to the directive layer.
+ * Pure function: takes a string, returns matches. Pattern source strings
+ * live in data/keywords.ts; add a locale there, not here. Adapters wire
+ * this into the chat-message hook and forward matches to the directive layer.
  */
 
+import { KEYWORDS, KEYWORD_LOCALES, type KeywordLocale } from "../data/keywords.js";
 import type { KeywordAction, KeywordMatch } from "./types.js";
 
 interface Pattern {
@@ -16,58 +18,38 @@ interface Pattern {
 // Order matters: forget comes before save so "don't forget" matches forget,
 // not the "forget" verb alone. Similarly "이거 기억하지 마" should map to
 // forget, not save.
-const PATTERNS: readonly Pattern[] = [
-  // Forget / delete — checked first
-  {
-    id: "en-forget-explicit",
-    regex: /\b(?:forget|delete that|don'?t remember|remove that memory)\b/gi,
-    action: "forget",
-  },
-  {
-    id: "en-forget-negation",
-    regex: /\bdon'?t (?:save|remember|store) this\b/gi,
-    action: "forget",
-  },
-  {
-    id: "kr-forget",
-    regex: /(?:잊어|지워|기억하지 마|_delete|삭제해)/g,
-    action: "forget",
-  },
-  // Save / remember
-  {
-    id: "en-save",
-    regex: /\b(?:remember this|save this|remember that|note that|keep this in mind|don'?t forget)\b/gi,
-    action: "save",
-  },
-  {
-    id: "en-save-implicit",
-    regex: /\b(?:this is important|for future|for next time|worth remembering)\b/gi,
-    action: "save",
-  },
-  {
-    id: "kr-save",
-    regex: /(?:기억해|저장해|남겨둬|메모해|기록해)/g,
-    action: "save",
-  },
-  // Recall
-  {
-    id: "en-recall",
-    regex: /\b(?:do you remember|recall|what did we (?:do|decide)|previously|last time|earlier)\b/gi,
-    action: "recall",
-  },
-  {
-    id: "kr-recall",
-    regex: /(?:기억나|이전에|저번에|그때|예전에)/g,
-    action: "recall",
-  },
-] as const;
+const ACTION_ORDER: readonly KeywordAction[] = ["forget", "save", "recall"];
+
+let cachedPatterns: readonly Pattern[] | null = null;
+
+/** Compile locale source strings into Pattern objects. Memoized. */
+function loadPatterns(): readonly Pattern[] {
+  if (cachedPatterns) return cachedPatterns;
+  const out: Pattern[] = [];
+  for (const action of ACTION_ORDER) {
+    for (const locale of KEYWORD_LOCALES) {
+      const sources = KEYWORDS[locale][action];
+      for (const src of sources) {
+        const flags = locale === "ko" ? "g" : "gi";
+        out.push({
+          id: `${locale}-${action}`,
+          regex: new RegExp(src, flags),
+          action,
+        });
+      }
+    }
+  }
+  cachedPatterns = out;
+  return out;
+}
 
 const MAX_MATCHES_PER_TURN = 5;
 
 export function matchKeywords(input: string): KeywordMatch[] {
   if (!input || typeof input !== "string") return [];
+  const patterns = loadPatterns();
   const out: KeywordMatch[] = [];
-  for (const pattern of PATTERNS) {
+  for (const pattern of patterns) {
     const re = new RegExp(pattern.regex.source, pattern.regex.flags);
     let m: RegExpExecArray | null;
     while ((m = re.exec(input)) !== null) {
@@ -102,3 +84,11 @@ export function summarizeMatches(matches: KeywordMatch[]): string {
   if (matches.length === 0) return "";
   return matches.map((m) => `${m.action}:"${m.match}"`).join(", ");
 }
+
+export const INTERNAL = {
+  loadPatterns,
+  KEYWORD_LOCALES,
+  ACTION_ORDER,
+};
+
+export type { KeywordLocale };

@@ -19,7 +19,6 @@ import {
   type OhAmConfig,
   type OhAmMode,
   type PhaseId,
-  type ProfileEntry,
   type ResolvedConfig,
 } from "../../core/config-types.js";
 
@@ -123,15 +122,6 @@ export function validateConfig(raw: unknown): OhAmConfig {
       }
     }
   }
-  if (cfg.mcpOnly !== undefined && (typeof cfg.mcpOnly !== "object" || cfg.mcpOnly === null)) {
-    errors.push("mcpOnly must be an object");
-  }
-  if (cfg.profiles !== undefined && (typeof cfg.profiles !== "object" || cfg.profiles === null)) {
-    errors.push("profiles must be an object");
-  }
-  if (cfg.activeProfile !== undefined && typeof cfg.activeProfile !== "string") {
-    errors.push("activeProfile must be a string");
-  }
   if (cfg.projectMap !== undefined) {
     if (!Array.isArray(cfg.projectMap)) {
       errors.push("projectMap must be an array");
@@ -148,16 +138,6 @@ export function validateConfig(raw: unknown): OhAmConfig {
         if (e.stack !== undefined && !Array.isArray(e.stack)) errors.push(`projectMap[${idx}].stack must be an array`);
       });
     }
-  }
-  if (
-    cfg.projectMapMode !== undefined &&
-    cfg.projectMapMode !== "merge" &&
-    cfg.projectMapMode !== "replace"
-  ) {
-    errors.push('projectMapMode must be "merge" or "replace"');
-  }
-  if (cfg.policy !== undefined && (typeof cfg.policy !== "object" || cfg.policy === null)) {
-    errors.push("policy must be an object");
   }
   if (cfg.healthCheckOnBoot !== undefined && typeof cfg.healthCheckOnBoot !== "boolean") {
     errors.push("healthCheckOnBoot must be a boolean");
@@ -234,22 +214,6 @@ export function mergeConfig(
     sources.secret = "default";
   }
 
-  // active profile (config-only)
-  const profiles = fileConfig?.profiles ?? DEFAULT_CONFIG.profiles;
-  const activeProfile = fileConfig?.activeProfile ?? null;
-  if (activeProfile && profiles[activeProfile]) {
-    const p: ProfileEntry = profiles[activeProfile];
-    // Active profile is a fallback — env/config still win.
-    if (sources.url === "default" && p.url) {
-      url = p.url;
-      sources.url = "config";
-    }
-    if (sources.secret === "default" && p.secret) {
-      secret = p.secret;
-      sources.secret = "config";
-    }
-  }
-
   // mode
   let mode: OhAmMode = DEFAULT_CONFIG.mode;
   if (env.OH_AM_MODE && VALID_MODES.includes(env.OH_AM_MODE as OhAmMode)) {
@@ -277,18 +241,8 @@ export function mergeConfig(
     sources.disabled = "default";
   }
 
-  // mcpOnly sub-options
-  const mcpOnly = {
-    strengthenDirective: fileConfig?.mcpOnly?.strengthenDirective ?? DEFAULT_CONFIG.mcpOnly.strengthenDirective,
-    autoSaveOnKeyword: fileConfig?.mcpOnly?.autoSaveOnKeyword ?? DEFAULT_CONFIG.mcpOnly.autoSaveOnKeyword,
-  };
-
-  // projectMap + mode
+  // projectMap (always merged — config prepends over built-ins in bootstrap.ts)
   const projectMap = fileConfig?.projectMap ?? DEFAULT_CONFIG.projectMap;
-  const projectMapMode = fileConfig?.projectMapMode ?? DEFAULT_CONFIG.projectMapMode;
-
-  // policy overrides
-  const policy = fileConfig?.policy ?? DEFAULT_CONFIG.policy;
 
   // healthCheck
   const healthCheckOnBoot = fileConfig?.healthCheckOnBoot ?? DEFAULT_CONFIG.healthCheckOnBoot;
@@ -312,12 +266,7 @@ export function mergeConfig(
     secret,
     mode,
     disabled,
-    mcpOnly,
-    profiles,
-    activeProfile,
     projectMap,
-    projectMapMode,
-    policy,
     healthCheckOnBoot,
     healthCheckTimeoutMs,
     healthCheckFatal,

@@ -5,43 +5,19 @@
  * candidate (or shouldSave=false with a skipReason). Adapter does the I/O
  * (history fetch, duplicate check, save).
  *
- * Filters are conservative on purpose — false negatives (skip a real
- * pattern) are cheap, false positives (save noise) accumulate over time.
+ * Error-signal keywords live in data/error-signals.ts; add a locale there,
+ * not here. Filters are conservative on purpose — false negatives (skip a
+ * real pattern) are cheap, false positives (save noise) accumulate over time.
  */
 
+import { ERROR_SIGNALS } from "../data/error-signals.js";
 import type {
   FileEditEvent,
   FileHistoryEntry,
   LessonCandidate,
 } from "./types.js";
 
-const ERROR_KEYWORDS = [
-  // English
-  "error",
-  "fail",
-  "failed",
-  "failure",
-  "crash",
-  "crashed",
-  "exception",
-  "bug",
-  "fix",
-  "fixed",
-  "regression",
-  "broken",
-  "undefined is not",
-  "null pointer",
-  "typeerror",
-  // Korean
-  "에러",
-  "오류",
-  "실패",
-  "버그",
-  "수정",
-  "고침",
-  "깨짐",
-  "오작동",
-] as const;
+const ERROR_KEYWORDS: readonly string[] = Object.values(ERROR_SIGNALS).flat();
 
 const MIN_EDIT_LINES = 5;
 const MIN_HISTORY_ENTRIES = 1;
