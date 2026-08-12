@@ -9,7 +9,7 @@
  */
 
 import { matchKeywords, summarizeMatches } from "../../../core/keywords.js";
-import { observe, pushSessionKeywords } from "../client.js";
+import { createObservation, pushSessionKeywords } from "../client.js";
 import { isPhaseDisabled } from "./_shared.js";
 
 const DEBUG = process.env.OH_AM_DEBUG === "1";
@@ -42,14 +42,19 @@ export async function onChatMessage(
 
     pushSessionKeywords(sessionId, matches);
 
-    await observe(sessionId, "oh_am_keyword_match", project, {
-      text: part.text.slice(0, 500),
-      matches: matches.map((m) => ({
-        action: m.action,
-        match: m.match,
-        patternId: m.patternId,
-      })),
-      summary: summarizeMatches(matches),
+    await createObservation({
+      sessionId,
+      hookType: "oh_am_keyword_match",
+      project,
+      data: {
+        text: part.text.slice(0, 500),
+        matches: matches.map((m) => ({
+          action: m.action,
+          match: m.match,
+          patternId: m.patternId,
+        })),
+        summary: summarizeMatches(matches),
+      },
     });
 
     if (DEBUG) {

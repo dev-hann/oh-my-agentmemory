@@ -1,16 +1,17 @@
 /**
  * oh-my-agentmemory — opencode plugin entry.
  *
- * Registers five hooks alongside the existing agentmemory-capture.ts plugin
+ * Registers six hooks alongside the existing agentmemory-capture.ts plugin
  * (which keeps doing passive observation). This plugin owns the WRITE side:
  *
  *   enforcement — experimental.chat.system.transform → per-turn directive push
  *   init        — event: session.created             → bootstrap empty slots
  *   intent      — chat.message                       → keyword detection
- *   archive     — event: session.status(idle)        → crystal suggestion
+ *   archive     — event: session.status(idle)        → auto-crystallize
  *   learning    — event: file.edited                 → auto lesson capture
+ *   bridge      — tool.execute.after(todowrite)      → sync todos to actions
  *
- * Hooks are independently disable-able via OH_AM_DISABLE=intent,learning etc.
+ * Hooks are independently disable-able via OH_AM_DISABLE=intent,learning,bridge etc.
  */
 
 import type { Plugin } from "@opencode-ai/plugin";
@@ -21,7 +22,10 @@ import { onChatMessage } from "./hooks/chat-message.js";
 import { onFileEdited } from "./hooks/file-edited.js";
 import { onSessionCreated } from "./hooks/session-created.js";
 import { onSessionStatus } from "./hooks/session-idle.js";
+import { onTodowrite } from "./hooks/todowrite.js";
+import { dropSessionState } from "./hooks/todowrite.js";
 import { systemTransformHook } from "./hooks/system-transform.js";
+import type { TodoEntry } from "../../core/types.js";
 
 export const OhMyAgentmemoryPlugin: Plugin = async (ctx) => {
   const cfg = loadConfig();
@@ -77,32 +81,41 @@ export const OhMyAgentmemoryPlugin: Plugin = async (ctx) => {
     // emits those events in some configurations.
     "tool.execute.after": async (input) => {
       const tool = ((input as { tool?: string }).tool ?? "").toLowerCase();
-      if (tool !== "edit" && tool !== "write") return;
       const sessionId = (input as { sessionID?: string }).sessionID;
       if (!sessionId) return;
       const args = (input as { args?: Record<string, unknown> }).args;
       if (!args) return;
-      const filePath = pickFilePath(args as FileEditedProperties);
-      if (!filePath) return;
 
-      let additions = 0;
-      let deletions = 0;
-      const ns = args.newString;
-      const os = args.oldString;
-      if (typeof ns === "string" && typeof os === "string") {
-        additions = ns.split("\n").length;
-        deletions = os.split("\n").length;
-      } else if (typeof args.content === "string") {
-        additions = args.content.split("\n").length;
+      // — file edit/ write → lesson auto-capture —
+      if (tool === "edit" || tool === "write") {
+        const filePath = pickFilePath(args as FileEditedProperties);
+        if (!filePath) return;
+
+        let additions = 0;
+        let deletions = 0;
+        const ns = args.newString;
+        const os = args.oldString;
+        if (typeof ns === "string" && typeof os === "string") {
+          additions = ns.split("\n").length;
+          deletions = os.split("\n").length;
+        } else if (typeof args.content === "string") {
+          additions = args.content.split("\n").length;
+        }
+
+        await onFileEdited({
+          sessionId,
+          project,
+          filePath,
+          additions,
+          deletions,
+        });
+        return;
       }
 
-      await onFileEdited({
-        sessionId,
-        project,
-        filePath,
-        additions,
-        deletions,
-      });
+      // NOTE: todowrite is handled via the dedicated `todo.updated` event
+      // in the event handler below. Subscribing here too causes a race
+      // condition where both fire simultaneously and bypass the per-session
+      // dedup map, producing duplicate actions.
     },
 
     // ── init / archive / learning: session + file lifecycle events ────────
@@ -131,6 +144,14 @@ export const OhMyAgentmemoryPlugin: Plugin = async (ctx) => {
           status: p.status,
           project,
         });
+        // Free per-session bridge state when the session goes idle.
+        // Guards against unbounded sessionState growth in long-running
+        // opencode processes.
+        const statusType = p.status?.type;
+        const sid = p.sessionID ?? p.sessionId ?? null;
+        if ((statusType === "idle" || statusType === "completed") && sid) {
+          dropSessionState(sid);
+        }
         return;
       }
 
@@ -163,6 +184,26 @@ export const OhMyAgentmemoryPlugin: Plugin = async (ctx) => {
         });
         return;
       }
+
+      // ── bridge: todo.updated event (opencode-native todo signal) ────────
+      // Belt-and-suspenders alongside the tool.execute.after(todowrite)
+      // handler above. Whichever fires first wins; onTodowrite dedupes by
+      // content so duplicate triggers within the same session are safe.
+      if (type === "todo.updated") {
+        const p = props as unknown as TodoUpdatedProperties;
+        const sessionId = pickSessionId(
+          p.sessionID,
+          p.sessionId,
+          (props as { sessionID?: string }).sessionID,
+        );
+        if (!sessionId) return;
+        const todosRaw = (p.todos ?? p.list ?? []) as unknown;
+        if (!Array.isArray(todosRaw)) return;
+        const todos = parseTodos(todosRaw);
+        if (todos.length === 0) return;
+        await onTodowrite({ sessionId, project, todos });
+        return;
+      }
     },
   };
 };
@@ -179,6 +220,15 @@ interface OpencodeEvent {
 interface SessionCreatedProperties {
   info?: { id?: string; title?: string };
   sessionID?: string;
+}
+
+interface TodoUpdatedProperties {
+  sessionID?: string;
+  sessionId?: string;
+  /** Optional list of todos carried by the event. */
+  todos?: unknown;
+  /** Alternative field name some opencode builds use. */
+  list?: unknown;
 }
 
 interface FileEditedProperties {
@@ -215,3 +265,41 @@ function pickSessionId(...candidates: Array<unknown>): string | null {
   }
   return null;
 }
+
+/**
+ * Parse raw todowrite args.todos array into typed TodoEntry[].
+ * Tolerates missing fields by defaulting to pending/medium.
+ */
+function parseTodos(raw: unknown[]): TodoEntry[] {
+  return raw
+    .map((entry): TodoEntry | null => {
+      if (typeof entry !== "object" || entry === null) return null;
+      const e = entry as Record<string, unknown>;
+      const content = typeof e.content === "string" ? e.content : "";
+      if (content.length === 0) return null;
+      const status = (
+        typeof e.status === "string" ? e.status : "pending"
+      ) as TodoEntry["status"];
+      const priority = (
+        typeof e.priority === "string" ? e.priority : "medium"
+      ) as TodoEntry["priority"];
+      return {
+        content,
+        status: TODO_STATUS_SET.has(status) ? status : "pending",
+        priority: TODO_PRIORITY_SET.has(priority) ? priority : "medium",
+      };
+    })
+    .filter((t): t is TodoEntry => t !== null);
+}
+
+const TODO_STATUS_SET = new Set<TodoEntry["status"]>([
+  "pending",
+  "in_progress",
+  "completed",
+  "cancelled",
+]);
+const TODO_PRIORITY_SET = new Set<TodoEntry["priority"]>([
+  "high",
+  "medium",
+  "low",
+]);

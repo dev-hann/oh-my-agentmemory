@@ -17,7 +17,7 @@ import type { DirectiveContext } from "../../../core/types.js";
 import type { PhaseId } from "../../../core/config-types.js";
 import {
   drainSessionKeywords,
-  getDoneActions,
+  listActions,
   listSlots,
   emptySlotLabels,
 } from "../client.js";
@@ -48,7 +48,7 @@ async function loadSessionContext(
 
   const [slots, done] = await Promise.all([
     listSlots(),
-    getDoneActions(25),
+    listActions({ status: "done", limit: 25 }),
   ]);
 
   const value = {

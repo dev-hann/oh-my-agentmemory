@@ -28,6 +28,7 @@ const VALID_PHASES: readonly PhaseId[] = [
   "intent",
   "archive",
   "learning",
+  "bridge",
 ];
 
 const VALID_MODES: readonly OhAmMode[] = ["auto", "full", "mcp-only"];

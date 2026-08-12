@@ -8,7 +8,7 @@
  */
 
 import { buildBootstrapUpdates } from "../../../core/bootstrap.js";
-import { emptySlotLabels, listSlots, observe, replaceSlot } from "../client.js";
+import { createObservation, emptySlotLabels, listSlots, replaceSlot } from "../client.js";
 import { invalidateSessionContext } from "./system-transform.js";
 import { isPhaseDisabled } from "./_shared.js";
 
@@ -54,11 +54,11 @@ export async function onSessionCreated(params: {
     if (ok) filled.push(update.label);
   }
 
-  await observe(
-    params.sessionId,
-    "oh_am_bootstrap",
-    params.project,
-    {
+  await createObservation({
+    sessionId: params.sessionId,
+    hookType: "oh_am_bootstrap",
+    project: params.project,
+    data: {
       cwd,
       emptySlots: empties,
       filledSlots: filled,
@@ -66,7 +66,7 @@ export async function onSessionCreated(params: {
         .filter((u) => !filled.includes(u.label))
         .map((u) => u.label),
     },
-  );
+  });
 
   if (DEBUG) {
     console.error(

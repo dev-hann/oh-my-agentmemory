@@ -27,12 +27,39 @@ export type SlotLabel =
   | "self_notes"
   | "session_patterns";
 
+export type ActionStatus = "pending" | "active" | "done" | "blocked" | "cancelled";
+
 export interface Action {
   id: string;
   title: string;
-  status: "pending" | "active" | "done" | "blocked" | "cancelled";
+  status: ActionStatus;
   priority?: number;
   tags?: string[];
+}
+
+/** Filter for `listActions`. All fields optional. */
+export interface ActionListFilter {
+  status?: ActionStatus;
+  limit?: number;
+}
+
+/** Parameters for `createAction`. */
+export interface ActionCreateParams {
+  title: string;
+  description?: string;
+  priority?: number;
+  /** Comma-separated tag string (agentmemory convention). */
+  tags?: string;
+  parentId?: string;
+  requires?: string;
+  project?: string;
+}
+
+/** Parameters for `updateAction`. All fields optional except actionId. */
+export interface ActionUpdateParams {
+  status?: ActionStatus;
+  priority?: number;
+  result?: string;
 }
 
 export type KeywordAction = "save" | "forget" | "recall";
@@ -88,4 +115,20 @@ export interface FileEditEvent {
   filePath: string;
   additions: number;
   deletions: number;
+}
+
+// ── Todo bridge ────────────────────────────────────────────────────────────
+
+/** A single todo entry as emitted by opencode's `todowrite` tool. */
+export interface TodoEntry {
+  content: string;
+  status: "pending" | "in_progress" | "completed" | "cancelled";
+  priority: "high" | "medium" | "low";
+}
+
+/** Snapshot of all todos in a session, keyed by stable index. */
+export interface TodoSnapshot {
+  sessionId: string;
+  todos: TodoEntry[];
+  capturedAt: number;
 }

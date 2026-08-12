@@ -15,7 +15,7 @@
  */
 
 import type { OhAmMode, ResolvedConfig } from "../../core/config-types.js";
-import { getRecentSessions } from "./client.js";
+import { listRecentSessions } from "./client.js";
 
 const DEBUG = process.env.OH_AM_DEBUG === "1";
 
@@ -34,7 +34,7 @@ interface SessionRow {
  */
 async function probeCaptureActive(): Promise<boolean> {
   try {
-    const sessions = await getRecentSessions(AUTO_PROBE_SESSION_LIMIT);
+    const sessions = await listRecentSessions(AUTO_PROBE_SESSION_LIMIT);
     if (!Array.isArray(sessions) || sessions.length === 0) {
       if (DEBUG) console.error("[oh-am] probe: no sessions → mcp-only");
       return false;

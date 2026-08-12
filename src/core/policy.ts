@@ -48,6 +48,14 @@ export const WRITE_POLICY: readonly PolicyRule[] = [
     text: "Session about to end with loose ends? Call memory_slot_replace on guidance for the next session.",
   },
   {
+    id: "action-on-multistep",
+    text: "Starting multi-step work that spans sessions or has cross-cutting impact? Create memory_action entries with priority >= 7 (high). Use todowrite for session-local micro-tasks — oh-am bridges high-priority todos only.",
+  },
+  {
+    id: "action-from-todos",
+    text: "oh-am auto-bridges high-priority todowrite entries to actions (tags: from-todo). Medium/low todos stay session-local. For non-todo persistent work (debugging, design, investigations), create memory_action manually with high priority.",
+  },
+  {
     id: "no-false-report",
     text: "Never claim 'memory updated' without an actual memory_* tool call in this turn.",
   },
@@ -56,11 +64,11 @@ export const WRITE_POLICY: readonly PolicyRule[] = [
 export const CRYSTAL_POLICY: readonly PolicyRule[] = [
   {
     id: "crystal-threshold",
-    text: "Three or more actions with status=done? Call memory_recall first to check for an existing crystal, then memory_crystallize with the done action IDs.",
+    text: "Five or more actions with status=done, at least one of them high-priority (≥7)? oh-am's archive hook auto-crystallizes on session.idle — no manual memory_crystallize needed.",
   },
   {
     id: "crystal-skip",
-    text: "Fewer than three done actions, or pure exploration with zero file changes → skip crystallize.",
+    text: "Fewer than five done actions, or zero high-priority done actions, or pure exploration with zero file changes → skip crystallize.",
   },
 ] as const;
 

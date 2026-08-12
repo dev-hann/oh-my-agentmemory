@@ -12,10 +12,10 @@
 import { buildLessonFromFileHistory } from "../../../core/lessons.js";
 import type { FileEditEvent, FileHistoryEntry } from "../../../core/types.js";
 import {
-  getFileHistory,
-  observe,
-  recallLessons,
-  saveLesson,
+  createObservation,
+  createLesson,
+  fetchFileHistory,
+  searchLessons,
 } from "../client.js";
 import { isMcpOnly, isPhaseDisabled } from "./_shared.js";
 
@@ -45,7 +45,7 @@ async function fetchHistory(
   if (cached?.inFlight) {
     return cached.inFlight;
   }
-  const inFlight = getFileHistory(filePath, sessionId).then((h) =>
+  const inFlight = fetchFileHistory(filePath, sessionId).then((h) =>
     h.slice(-FILE_HISTORY_MAX),
   );
   historyCache.set(filePath, { history: [], fetchedAt: now, inFlight });
@@ -109,7 +109,7 @@ export async function onFileEdited(params: {
   let existing: Array<{ id: string; content: string; confidence: number }> = [];
   if (candidate.shouldSave) {
     try {
-      existing = await recallLessons(candidate.duplicateQuery, 5);
+      existing = await searchLessons(candidate.duplicateQuery, 5);
     } catch (e) {
       if (DEBUG)
         console.error(
@@ -131,26 +131,31 @@ export async function onFileEdited(params: {
 
   let saved = false;
   if (candidate.shouldSave) {
-    saved = await saveLesson(
-      candidate.content,
-      candidate.tags,
-      candidate.confidence,
-      project ?? undefined,
-    );
+    saved = await createLesson({
+      content: candidate.content,
+      tags: candidate.tags,
+      confidence: candidate.confidence,
+      project: project ?? undefined,
+    });
   }
 
   // Always observe — records that the hook fired even when skipping the save,
   // so the learning phase is debuggable without OH_AM_DEBUG.
-  await observe(sessionId, "oh_am_lesson_auto", project, {
-    filePath,
-    additions: edit.additions,
-    deletions: edit.deletions,
-    historyEntries: history.length,
-    duplicateCount: existing.length,
-    shouldSave: candidate.shouldSave,
-    saved,
-    skipReason: candidate.skipReason ?? null,
-    preview: candidate.content.slice(0, 200),
+  await createObservation({
+    sessionId,
+    hookType: "oh_am_lesson_auto",
+    project,
+    data: {
+      filePath,
+      additions: edit.additions,
+      deletions: edit.deletions,
+      historyEntries: history.length,
+      duplicateCount: existing.length,
+      shouldSave: candidate.shouldSave,
+      saved,
+      skipReason: candidate.skipReason ?? null,
+      preview: candidate.content.slice(0, 200),
+    },
   });
 
   if (DEBUG) {

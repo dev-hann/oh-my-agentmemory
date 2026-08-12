@@ -29,6 +29,22 @@ describe("buildDirective", () => {
     expect(out).toMatch(/memory_slot_replace/);
   });
 
+  it("includes the action-on-multistep and action-from-todos rules", () => {
+    const out = buildDirective(baseCtx());
+    // Rule text contains these phrases (rule id itself is not rendered).
+    expect(out).toContain("Starting multi-step work");
+    expect(out).toContain("memory_action");
+    expect(out).toContain("todowrite");
+    expect(out).toContain("high-priority");
+  });
+
+  it("updates crystal policy to new 5+high threshold", () => {
+    const out = buildDirective(baseCtx());
+    expect(out).toContain("Five or more actions");
+    expect(out).toContain("high-priority");
+    expect(out).toContain("session.idle");
+  });
+
   it("omits policy bodies in compact mode", () => {
     const out = buildDirective(baseCtx(), { compact: true });
     expect(out).not.toContain("## Recall");

@@ -12,7 +12,8 @@ export type PhaseId =
   | "init"
   | "intent"
   | "archive"
-  | "learning";
+  | "learning"
+  | "bridge";
 
 export interface ProjectMapEntry {
   /** RegExp source string — matched against cwd. */
