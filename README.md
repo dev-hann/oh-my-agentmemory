@@ -8,10 +8,11 @@ Companion plugin to `agentmemory-capture.ts`. Capture already works —
 this plugin forces the agent to **write** to memory proactively.
 
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![npm](https://img.shields.io/npm/v/oh-my-agentmemory?color=CB3837)](https://www.npmjs.com/package/oh-my-agentmemory)
+[![CI](https://github.com/dev-hann/oh-my-agentmemory/actions/workflows/ci.yml/badge.svg)](https://github.com/dev-hann/oh-my-agentmemory/actions/workflows/ci.yml)
 [![opencode](https://img.shields.io/badge/opencode-%E2%89%A51.14-6E56CF.svg)](https://opencode.ai)
 [![agentmemory](https://img.shields.io/badge/agentmemory-%E2%89%A50.9.28-FF6B35.svg)](https://github.com/rohitg00/agentmemory)
-[![tests](https://img.shields.io/badge/tests-62%20passing-22C55E.svg)](./tests)
-[![phases](https://img.shields.io/badge/hooks-5-9333EA.svg)](#how-it-works)
+[![hooks](https://img.shields.io/badge/hooks-6-9333EA.svg)](#how-it-works)
 
 [English](./README.md) · [한국어](./README.ko.md)
 
@@ -57,7 +58,7 @@ calls.
 
 ## How it works
 
-Five hooks, each owning one slice of the write side. Each has a short
+Six hooks, each owning one slice of the write side. Each has a short
 **purpose name** used in `OH_AM_DISABLE` and a corresponding opencode
 hook. All coexist with `agentmemory-capture.ts` (which keeps doing
 passive observation).
@@ -70,6 +71,7 @@ flowchart LR
         ST[system.transform<br/>every LLM turn]
         SI[session.status idle]
         FE[file.edited]
+        TU[todo.updated]
     end
 
     subgraph OH[oh-my-agentmemory]
@@ -78,12 +80,14 @@ flowchart LR
         ENF[enforcement<br/>per-turn directive]
         ARCH[archive<br/>crystal suggestion]
         LEARN[learning<br/>auto-lesson from history]
+        BRIDGE[bridge<br/>todo → action]
     end
 
     subgraph AM[agentmemory HTTP API]
         SLOTS[slot / replace]
         OBSERVE[observe]
         LESSON[lesson / save]
+        ACT[action / create]
     end
 
     SC --> INIT --> SLOTS
@@ -91,9 +95,11 @@ flowchart LR
     ST --> ENF
     SI --> ARCH --> OBSERVE
     FE --> LEARN --> LESSON
+    TU --> BRIDGE --> ACT[action / create]
     INTENT -.queued intent.-> ENF
     ARCH -.flag.-> ENF
     INIT -.cache invalidate.-> ENF
+    BRIDGE -.done-action count.-> ARCH
 ```
 
 | Hook (opencode event) | Purpose | What it does |
@@ -103,6 +109,7 @@ flowchart LR
 | `chat.message` | **intent** | Matches user text against bilingual patterns: "remember", "save this", "don't forget", "기억해", "저장해", "잊어". Queues matches for the next directive. |
 | `event: session.status` (idle) | **archive** | When ≥3 actions are done, records a `oh_am_crystal_candidate` observation. The next directive surfaces the candidate IDs to the LLM. |
 | `event: file.edited` | **learning** | Fetches the file's history, looks for error signals (`error`, `fail`, `bug`, `에러`, `실패`, …), skips if edit is tiny or no error pattern, dedupes against `lesson_recall`, then calls `lesson/save`. 5-min per-file history cache + 60-second per-file debounce. |
+| `event: todo.updated` | **bridge** | Bridges high-priority (`priority ≥ 7`) `todowrite` entries into agentmemory actions (tags: `from-todo`). Medium/low stay session-local. Done high-priority actions feed the archive hook's crystal threshold. |
 
 ### Sample directive (what the LLM sees every turn)
 
@@ -159,32 +166,18 @@ automatically from data — no string-surgery required.
   ```bash
   npx @agentmemory/agentmemory
   ```
-- [Bun](https://bun.sh) for plugin runtime + dev tooling
+- [Bun](https://bun.sh) only if installing from source (opencode bundles the runtime for npm plugins)
 
-### 2. Clone + install
+### 2. Register the plugin (alongside capture.ts)
 
-```bash
-git clone https://github.com/dev-hann/oh-my-agentmemory.git ~/Documents/oh-my-agentmemory
-cd ~/Documents/oh-my-agentmemory
-bun install
-```
-
-### 3. Symlink into opencode's plugins dir
-
-```bash
-ln -sfn ~/Documents/oh-my-agentmemory/src/adapters/opencode \
-        ~/.config/opencode/plugins/oh-my-agentmemory
-```
-
-### 4. Register the plugin (alongside capture.ts)
-
-Edit `~/.config/opencode/opencode.json`:
+Add `oh-my-agentmemory` to `~/.config/opencode/opencode.json` — opencode
+installs it automatically from npm at startup:
 
 ```json
 {
   "plugin": [
     "./plugins/agentmemory-capture.ts",
-    "./plugins/oh-my-agentmemory/plugin.ts"
+    "oh-my-agentmemory"
   ]
 }
 ```
@@ -192,32 +185,47 @@ Edit `~/.config/opencode/opencode.json`:
 Keep `agentmemory-capture.ts` — this plugin is **write-side only** and
 depends on capture.ts continuing to observe.
 
-### 5. (Optional) Symlink slash commands
+### 3. (Optional) Install slash commands
 
 ```bash
+mkdir -p ~/.config/opencode/commands
 for f in am-recall am-save am-bootstrap am-status; do
-  ln -sfn ~/Documents/oh-my-agentmemory/src/adapters/opencode/commands/${f}.md \
-          ~/.config/opencode/commands/${f}.md
+  curl -fsSL "https://raw.githubusercontent.com/dev-hann/oh-my-agentmemory/main/src/adapters/opencode/commands/${f}.md" \
+       -o ~/.config/opencode/commands/${f}.md
 done
 ```
 
-### 6. (Optional) Create a config file
+### 4. (Optional) Create a config file
 
 Defaults work out of the box (localhost agentmemory, auto mode). For
 persistent settings — remote server, custom project map,
 health-check tuning — create `~/.config/opencode/oh-am.jsonc`:
 
-```bash
-cp ~/Documents/oh-my-agentmemory/examples/oh-am.full.jsonc \
-   ~/.config/opencode/oh-am.jsonc
-# then edit to taste — every field is optional
+```jsonc
+// start from the full annotated reference:
+// https://github.com/dev-hann/oh-my-agentmemory/blob/main/examples/oh-am.full.jsonc
 ```
 
 See [Configuration](#configuration) for the full schema.
 
-### 7. Restart opencode
+### 5. Restart opencode
 
 Verify with `/am-status` — it should report pinned slots filled.
+
+<details>
+<summary><b>Install from source (development)</b></summary>
+
+```bash
+git clone https://github.com/dev-hann/oh-my-agentmemory.git ~/Documents/oh-my-agentmemory
+cd ~/Documents/oh-my-agentmemory && bun install
+ln -sfn ~/Documents/oh-my-agentmemory/src/adapters/opencode \
+        ~/.config/opencode/plugins/oh-my-agentmemory
+```
+
+Then register `"./plugins/oh-my-agentmemory/plugin.ts"` instead of the
+npm package name in `opencode.json`.
+
+</details>
 
 ---
 
@@ -384,7 +392,7 @@ porting cost down to "write one adapter file per agent."
 
 ```bash
 bun install
-bun run test            # vitest, 62 tests, ~200ms
+bun run test            # vitest, 72 tests, ~350ms
 bun run typecheck       # tsc --noEmit, strict mode
 ```
 
@@ -523,7 +531,6 @@ Adapter tests require a running agentmemory server.
 - **Claude Code adapter** — `adapters/claude-code/` (`.claude/settings.json` hook scripts
   that invoke `core/`)
 - **Codex adapter** — `adapters/codex/` (Codex hook format)
-- **npm publish** — `bunx oh-my-agentmemory install --agent X` CLI installer
 
 Contributions welcome. Open an issue first to discuss scope.
 
@@ -532,12 +539,9 @@ Contributions welcome. Open an issue first to discuss scope.
 ## Uninstall
 
 ```bash
-# Remove from opencode.json plugin[]
-# Remove symlinks
-rm ~/.config/opencode/plugins/oh-my-agentmemory
+# Remove "oh-my-agentmemory" from opencode.json plugin[]
+rm -rf ~/.cache/opencode/node_modules/oh-my-agentmemory
 rm ~/.config/opencode/commands/am-{recall,save,bootstrap,status}.md
-# Optionally remove the source tree
-rm -rf ~/Documents/oh-my-agentmemory
 ```
 
 Your agentmemory data is untouched — only the directive plugin is removed.

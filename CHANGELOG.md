@@ -6,6 +6,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added — npm distribution + CI
+- Published to npm as `oh-my-agentmemory`; register with
+  `"plugin": ["oh-my-agentmemory"]` (opencode auto-installs at startup)
+- GitHub Actions CI: `bun install` + `typecheck` + `vitest` on push/PR
+- README (EN/KO) install sections rewritten to npm flow; symlink method
+  moved to a development details block
+- Hooks count badge corrected to 6 (bridge/todo.updated was missing)
+
 ### Added — initial scaffold
 - Hexagonal architecture: `src/core/` (agent-agnostic) + `src/adapters/opencode/`
 - enforcement: `experimental.chat.system.transform` per-turn directive push

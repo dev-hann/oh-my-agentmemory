@@ -1,13 +1,31 @@
 {
   "name": "oh-my-agentmemory",
   "version": "0.1.0",
-  "private": true,
   "description": "opencode plugin enforcing agentmemory proactive use via per-turn directives, slot bootstrap, keyword detection, crystal suggestions, and auto-lesson capture",
   "type": "module",
   "main": "./src/adapters/opencode/plugin.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dev-hann/oh-my-agentmemory.git"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "agentmemory",
+    "memory",
+    "agent",
+    "llm"
+  ],
+  "license": "MIT",
+  "files": [
+    "src",
+    "examples",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepublishOnly": "bun run typecheck && bun run test"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "latest",

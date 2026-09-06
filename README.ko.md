@@ -8,10 +8,11 @@
 이 플러그인은 에이전트가 **능동적으로 메모리에 쓰게** 강제합니다.
 
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![npm](https://img.shields.io/npm/v/oh-my-agentmemory?color=CB3837)](https://www.npmjs.com/package/oh-my-agentmemory)
+[![CI](https://github.com/dev-hann/oh-my-agentmemory/actions/workflows/ci.yml/badge.svg)](https://github.com/dev-hann/oh-my-agentmemory/actions/workflows/ci.yml)
 [![opencode](https://img.shields.io/badge/opencode-%E2%89%A51.14-6E56CF.svg)](https://opencode.ai)
 [![agentmemory](https://img.shields.io/badge/agentmemory-%E2%89%A50.9.28-FF6B35.svg)](https://github.com/rohitg00/agentmemory)
-[![tests](https://img.shields.io/badge/tests-62%20passing-22C55E.svg)](./tests)
-[![phases](https://img.shields.io/badge/hooks-5-9333EA.svg)](#어떻게-동작하나)
+[![hooks](https://img.shields.io/badge/hooks-6-9333EA.svg)](#어떻게-동작하나)
 
 [English](./README.md) · 한국어
 
@@ -56,7 +57,7 @@ agentmemory는 **54개의 MCP 도구**와 튼튼한 자동 캡처 플러그인
 
 ## 어떻게 동작하나
 
-다섯 개의 훅이 쓰기 쪽의 한 조각씩을 담당합니다. 각각 짧은 **목적 이름**을
+여섯 개의 훅이 쓰기 쪽의 한 조각씩을 담당합니다. 각각 짧은 **목적 이름**을
 가지며 `OH_AM_DISABLE`에서 사용됩니다. 모두 `agentmemory-capture.ts`와
 공존합니다 (capture.ts는 passive 관측을 계속 수행).
 
@@ -68,6 +69,7 @@ flowchart LR
         ST[system.transform<br/>매 LLM 턴]
         SI[session.status idle]
         FE[file.edited]
+        TU[todo.updated]
     end
 
     subgraph OH[oh-my-agentmemory]
@@ -76,12 +78,14 @@ flowchart LR
         ENF[enforcement<br/>매 턴 directive]
         ARCH[archive<br/>crystal 제안]
         LEARN[learning<br/>히스토리 기반 자동 lesson]
+        BRIDGE[bridge<br/>todo → action]
     end
 
     subgraph AM[agentmemory HTTP API]
         SLOTS[slot / replace]
         OBSERVE[observe]
         LESSON[lesson / save]
+        ACT[action / create]
     end
 
     SC --> INIT --> SLOTS
@@ -89,9 +93,11 @@ flowchart LR
     ST --> ENF
     SI --> ARCH --> OBSERVE
     FE --> LEARN --> LESSON
+    TU --> BRIDGE --> ACT
     INTENT -.대기 중인 의도.-> ENF
     ARCH -.플래그.-> ENF
     INIT -.캐시 무효화.-> ENF
+    BRIDGE -.done 액션 수.-> ARCH
 ```
 
 | 훅 (opencode 이벤트) | 목적 | 하는 일 |
@@ -101,6 +107,7 @@ flowchart LR
 | `chat.message` | **intent** | 사용자 텍스트를 이중 언어 패턴으로 매칭: "remember", "save this", "don't forget", "기억해", "저장해", "잊어". 매칭을 다음 directive에 큐잉. |
 | `event: session.status` (idle) | **archive** | done 액션이 ≥3개면 `oh_am_crystal_candidate` observation 기록. 다음 directive가 후보 ID를 LLM에 노출. |
 | `event: file.edited` | **learning** | 파일 히스토리를 가져와 에러 신호(`error`, `fail`, `bug`, `에러`, `실패`, …)를 찾습니다. 편집이 너무 작거나 에러 패턴이 없으면 스킵, `lesson_recall`로 중복 확인 후 `lesson/save` 호출. 파일당 5분 히스토리 캐시 + 60초 디바운스. |
+| `event: todo.updated` | **bridge** | 우선순위 높은(`priority ≥ 7`) `todowrite` 항목을 agentmemory action으로 브리지 (tags: `from-todo`). medium/low는 세션 로컬에 유지. 완료된 고우선순위 action은 archive 훅의 crystal 임계값에 반영. |
 
 ### directive 예시 (LLM이 매 턴 보는 것)
 
@@ -149,32 +156,18 @@ memory_*를 불렀다고 보고하면 거짓 보고 (금지).
   ```bash
   npx @agentmemory/agentmemory
   ```
-- [Bun](https://bun.sh) (플러그인 런타임 + 개발 도구)
+- [Bun](https://bun.sh)은 소스 설치 시에만 필요 (npm 플러그인은 opencode가 런타임 내장)
 
-### 2. 클론 + 설치
+### 2. 플러그인 등록 (capture.ts와 병존)
 
-```bash
-git clone https://github.com/dev-hann/oh-my-agentmemory.git ~/Documents/oh-my-agentmemory
-cd ~/Documents/oh-my-agentmemory
-bun install
-```
-
-### 3. opencode 플러그인 디렉토리에 심볼릭 링크
-
-```bash
-ln -sfn ~/Documents/oh-my-agentmemory/src/adapters/opencode \
-        ~/.config/opencode/plugins/oh-my-agentmemory
-```
-
-### 4. 플러그인 등록 (capture.ts와 병존)
-
-`~/.config/opencode/opencode.json` 편집:
+`~/.config/opencode/opencode.json`의 `plugin` 배열에 `oh-my-agentmemory` 추가 —
+opencode가 시작 시 npm에서 자동 설치합니다:
 
 ```json
 {
   "plugin": [
     "./plugins/agentmemory-capture.ts",
-    "./plugins/oh-my-agentmemory/plugin.ts"
+    "oh-my-agentmemory"
   ]
 }
 ```
@@ -182,32 +175,47 @@ ln -sfn ~/Documents/oh-my-agentmemory/src/adapters/opencode \
 `agentmemory-capture.ts`는 제거하지 마세요 — 이 플러그인은 **쓰기 전용**이며
 capture.ts의 관측이 계속되어야 합니다.
 
-### 5. (선택) 슬래시 명령 심볼릭 링크
+### 3. (선택) 슬래시 명령 설치
 
 ```bash
+mkdir -p ~/.config/opencode/commands
 for f in am-recall am-save am-bootstrap am-status; do
-  ln -sfn ~/Documents/oh-my-agentmemory/src/adapters/opencode/commands/${f}.md \
-          ~/.config/opencode/commands/${f}.md
+  curl -fsSL "https://raw.githubusercontent.com/dev-hann/oh-my-agentmemory/main/src/adapters/opencode/commands/${f}.md" \
+       -o ~/.config/opencode/commands/${f}.md
 done
 ```
 
-### 6. (선택) 설정 파일 생성
+### 4. (선택) 설정 파일 생성
 
 기본값으로 바로 동작합니다 (localhost agentmemory, auto 모드). 영구 설정을
 원하면 — 원격 서버, 커스텀 프로젝트 맵, 헬스체크 튜닝 —
 `~/.config/opencode/oh-am.jsonc`를 생성:
 
-```bash
-cp ~/Documents/oh-my-agentmemory/examples/oh-am.full.jsonc \
-   ~/.config/opencode/oh-am.jsonc
-# 이후 취향에 맞게 수정 — 모든 필드는 선택 사항
+```jsonc
+// 전체 주석 달린 레퍼런스에서 시작:
+// https://github.com/dev-hann/oh-my-agentmemory/blob/main/examples/oh-am.full.jsonc
 ```
 
 전체 스키마는 [설정](#설정) 섹션 참고.
 
-### 7. opencode 재시작
+### 5. opencode 재시작
 
 `/am-status`로 확인 — pinned slots이 채워져 있어야 합니다.
+
+<details>
+<summary><b>소스에서 설치 (개발용)</b></summary>
+
+```bash
+git clone https://github.com/dev-hann/oh-my-agentmemory.git ~/Documents/oh-my-agentmemory
+cd ~/Documents/oh-my-agentmemory && bun install
+ln -sfn ~/Documents/oh-my-agentmemory/src/adapters/opencode \
+        ~/.config/opencode/plugins/oh-my-agentmemory
+```
+
+이후 `opencode.json`에 npm 패키지명 대신
+`"./plugins/oh-my-agentmemory/plugin.ts"`를 등록하세요.
+
+</details>
 
 ---
 
@@ -363,7 +371,7 @@ oh-my-agentmemory/
 
 ```bash
 bun install
-bun run test            # vitest, 62 테스트, ~200ms
+bun run test            # vitest, 72 테스트, ~350ms
 bun run typecheck       # tsc --noEmit, strict 모드
 ```
 
@@ -499,7 +507,6 @@ bun run typecheck    # strict TS
 - **Claude Code 어댑터** — `adapters/claude-code/` (`.claude/settings.json` 훅 스크립트가
   `core/`를 호출)
 - **Codex 어댑터** — `adapters/codex/` (Codex 훅 포맷)
-- **npm 게시** — `bunx oh-my-agentmemory install --agent X` CLI 설치자
 
 기여 환영. 범위 논의를 위해 먼저 이슈를 여세요.
 
@@ -508,12 +515,9 @@ bun run typecheck    # strict TS
 ## 제거
 
 ```bash
-# opencode.json의 plugin[]에서 제거
-# 심볼릭 링크 제거
-rm ~/.config/opencode/plugins/oh-my-agentmemory
+# opencode.json의 plugin[]에서 "oh-my-agentmemory" 제거
+rm -rf ~/.cache/opencode/node_modules/oh-my-agentmemory
 rm ~/.config/opencode/commands/am-{recall,save,bootstrap,status}.md
-# (선택) 소스 트리 제거
-rm -rf ~/Documents/oh-my-agentmemory
 ```
 
 agentmemory 데이터는 그대로 유지 — directive 플러그인만 제거됩니다.
