@@ -11,6 +11,10 @@
  *   learning    — event: file.edited                 → auto lesson capture
  *   bridge      — tool.execute.after(todowrite)      → sync todos to actions
  *
+ * Plus a boot-time stale session GC (agentmemory-side only): ends sessions
+ * untouched for sessionGc.maxAgeDays and reactivates them if a prompt later
+ * arrives on an ended session. See hooks/session-gc.ts.
+ *
  * Hooks are independently disable-able via OH_AM_DISABLE=intent,learning,bridge etc.
  */
 

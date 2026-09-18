@@ -6,6 +6,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added — stale session GC
+- One-shot sweep on plugin boot ends agentmemory sessions that have sat
+  `active` with no updates for longer than `sessionGc.maxAgeDays`
+  (default 7, disabled by default) — agentmemory-side only; opencode chat
+  sessions on disk are never touched
+- Reactivation guard: a prompt landing on an ended session (user resumed
+  an old conversation) automatically restarts its agentmemory record
+- Config: `"sessionGc": { "enabled": true, "maxAgeDays": 7 }` in oh-am.jsonc
+- New client functions: `listSessions` / `endSession` / `restartSession`
+
 ### Added — npm distribution + CI
 - Published to npm as `oh-my-agentmemory`; register with
   `"plugin": ["oh-my-agentmemory"]` (opencode auto-installs at startup)

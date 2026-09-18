@@ -281,6 +281,12 @@ ln -sfn ~/Documents/oh-my-agentmemory/src/adapters/opencode \
   "healthCheckTimeoutMs": 2000,
   "healthCheckFatal": false,
 
+  // 스테일 세션 GC (agentmemory 기록만; 아래 "스테일 세션 GC" 참고)
+  "sessionGc": {
+    "enabled": true,
+    "maxAgeDays": 7
+  },
+
   // stderr 상세 로깅
   "debug": false
 }
@@ -312,6 +318,15 @@ probe; 최근 세션들이 평균 5개 미만의 observation을 가지면 `mcp-o
 - 기본 (`healthCheckFatal: false`): 경고 로그 후 계속 실행 (훅들은
   HTTP 호출을 조용히 실패)
 - `healthCheckFatal: true`: 훅을 반환하지 않아 사실상 비활성
+
+### 스테일 세션 GC
+
+`"sessionGc": { "enabled": true, "maxAgeDays": 7 }` — 플러그인 부팅 시
+1회 스윕으로, `maxAgeDays`일 이상 업데이트 없이 `active`로 남아 있는
+agentmemory 세션을 종료 처리한다. agentmemory 장부 정리일 뿐 — 디스크의
+opencode 채팅 세션은 전혀 건드리지 않는다. 이후 종료된 세션으로 프롬프트가
+도착하면(오래된 대화를 재개한 경우) 다음 프롬프트에서 기록이 자동으로
+재활성화된다.
 
 ---
 
