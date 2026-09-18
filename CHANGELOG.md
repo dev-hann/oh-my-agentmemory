@@ -13,6 +13,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sessions on disk are never touched
 - Reactivation guard: a prompt landing on an ended session (user resumed
   an old conversation) automatically restarts its agentmemory record
+- TUI toast reports the ended session count after the sweep (via the
+  opencode SDK `client.tui.showToast`; skipped silently in headless runs)
 - Config: `"sessionGc": { "enabled": true, "maxAgeDays": 7 }` in oh-am.jsonc
 - New client functions: `listSessions` / `endSession` / `restartSession`
 

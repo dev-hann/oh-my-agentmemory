@@ -67,7 +67,8 @@
   // no updates for longer than maxAgeDays. agentmemory-side only — the
   // opencode chat session on disk is never touched. If a prompt later
   // arrives for an ended session (user resumed it), it is automatically
-  // reactivated.
+  // reactivated. A TUI toast reports the ended count (skipped silently
+  // in headless runs).
   "sessionGc": {
     "enabled": false,
     "maxAgeDays": 7

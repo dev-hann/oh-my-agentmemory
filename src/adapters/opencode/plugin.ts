@@ -64,9 +64,9 @@ export const OhMyAgentmemoryPlugin: Plugin = async (ctx) => {
 
   // Stale session GC — one-shot sweep on boot. Ends agentmemory sessions
   // untouched for maxAgeDays (agentmemory-side only; opencode chat sessions
-  // are never modified).
+  // are never modified). Shows a TUI toast with the ended count when >0.
   if (cfg.sessionGc.enabled) {
-    void sweepStaleSessions(cfg).catch((e) => {
+    void sweepStaleSessions(cfg, ctx.client).catch((e) => {
       console.error("[oh-am] session gc failed:", (e as Error).message);
     });
   }

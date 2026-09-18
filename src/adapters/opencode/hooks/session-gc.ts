@@ -19,9 +19,45 @@ import type { ResolvedConfig } from "../../../core/config-types.js";
 
 const DEBUG = process.env.OH_AM_DEBUG === "1";
 
+/**
+ * Structural slice of the opencode SDK client — just the TUI toast call.
+ * Kept local so this hook does not depend on @opencode-ai/sdk types
+ * directly (the plugin passes its PluginInput.client through).
+ */
+interface ToastClient {
+  tui: {
+    showToast: (data: {
+      body?: {
+        title?: string;
+        message: string;
+        variant: "info" | "success" | "warning" | "error";
+        duration?: number;
+      };
+    }) => Promise<unknown>;
+  };
+}
+
 const endedSessionIds = new Set<string>();
 
-export async function sweepStaleSessions(cfg: ResolvedConfig): Promise<void> {
+async function showGcToast(client: ToastClient, ended: number): Promise<void> {
+  try {
+    await client.tui.showToast({
+      body: {
+        title: "oh-am session GC",
+        message: `Ended ${ended} stale session(s)`,
+        variant: "info",
+        duration: 8000,
+      },
+    });
+  } catch {
+    // Headless run or no TUI attached — toast is best-effort.
+  }
+}
+
+export async function sweepStaleSessions(
+  cfg: ResolvedConfig,
+  client?: ToastClient,
+): Promise<void> {
   const maxAgeMs = cfg.sessionGc.maxAgeDays * 24 * 60 * 60 * 1000;
   const sessions = await listSessions(1000);
   const now = Date.now();
@@ -49,6 +85,9 @@ export async function sweepStaleSessions(cfg: ResolvedConfig): Promise<void> {
       `[oh-am] session-gc: ended ${staleCount} stale session(s) ` +
         `(${sessions.length} total, threshold ${cfg.sessionGc.maxAgeDays}d)`,
     );
+  }
+  if (staleCount > 0 && client) {
+    void showGcToast(client, staleCount);
   }
 }
 

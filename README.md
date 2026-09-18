@@ -338,7 +338,8 @@ plugin boot that ends agentmemory sessions sitting `active` with no updates
 for more than 7 days. This is agentmemory bookkeeping only — the opencode
 chat session on disk is never touched. If a prompt later arrives for an
 ended session (the user resumed an old conversation), the record is
-automatically reactivated.
+automatically reactivated. When the sweep ends sessions, a TUI toast shows
+the count (best-effort; headless runs skip it silently).
 
 ---
 
