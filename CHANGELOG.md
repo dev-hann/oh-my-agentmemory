@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-18
+
 ### Added — stale session GC
 - One-shot sweep on plugin boot ends agentmemory sessions that have sat
   `active` with no updates for longer than `sessionGc.maxAgeDays`
@@ -17,6 +19,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   opencode SDK `client.tui.showToast`; skipped silently in headless runs)
 - Config: `"sessionGc": { "enabled": true, "maxAgeDays": 7 }` in oh-am.jsonc
 - New client functions: `listSessions` / `endSession` / `restartSession`
+
+### Added — npm publish via OIDC trusted publishing
+- Tag-triggered GitHub Actions workflow (`publish.yml`) publishes to npm
+  using OIDC trusted publishing — no long-lived npm token required,
+  provenance attestation generated automatically
+
+## [0.1.0] - 2026-09-06
 
 ### Added — npm distribution + CI
 - Published to npm as `oh-my-agentmemory`; register with
