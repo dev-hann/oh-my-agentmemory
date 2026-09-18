@@ -23,6 +23,13 @@ export interface ProjectMapEntry {
   stack?: string[];
 }
 
+export interface SessionGcConfig {
+  /** End stale active sessions in agentmemory on boot. Default false. */
+  enabled?: boolean;
+  /** An active session with no updates older than this is stale. Default 7. */
+  maxAgeDays?: number;
+}
+
 export interface OhAmConfig {
   /** agentmemory server URL. Env AGENTMEMORY_URL takes precedence. */
   url?: string;
@@ -45,6 +52,9 @@ export interface OhAmConfig {
   /** If true, plugin self-disables when health check fails. Default false. */
   healthCheckFatal?: boolean;
 
+  /** Stale session GC (agentmemory-side only). */
+  sessionGc?: SessionGcConfig;
+
   /** Verbose stderr logging. Env OH_AM_DEBUG=1 takes precedence. */
   debug?: boolean;
 }
@@ -59,6 +69,7 @@ export interface ResolvedConfig {
   healthCheckOnBoot: boolean;
   healthCheckTimeoutMs: number;
   healthCheckFatal: boolean;
+  sessionGc: { enabled: boolean; maxAgeDays: number };
   debug: boolean;
   /** Where each top-level field came from, for debug logging. */
   sources: Record<string, "env" | "config" | "default">;
@@ -73,6 +84,7 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
   healthCheckOnBoot: true,
   healthCheckTimeoutMs: 2000,
   healthCheckFatal: false,
+  sessionGc: { enabled: false, maxAgeDays: 7 },
   debug: false,
   sources: {},
 };

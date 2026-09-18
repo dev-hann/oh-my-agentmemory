@@ -61,6 +61,18 @@
   "healthCheckTimeoutMs": 2000,     // abort after N ms
   "healthCheckFatal": false,        // if true, plugin self-disables on failure
 
+  // ─── stale session GC ─────────────────────────────────────────────
+  //
+  // On plugin boot, end agentmemory sessions that have sat active with
+  // no updates for longer than maxAgeDays. agentmemory-side only — the
+  // opencode chat session on disk is never touched. If a prompt later
+  // arrives for an ended session (user resumed it), it is automatically
+  // reactivated.
+  "sessionGc": {
+    "enabled": false,
+    "maxAgeDays": 7
+  },
+
   // ─── debug ─────────────────────────────────────────────────────────
   //
   // Verbose stderr logging. OH_AM_DEBUG=1 env wins.

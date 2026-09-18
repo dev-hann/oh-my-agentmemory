@@ -122,3 +122,23 @@ describe("mergeConfig", () => {
     expect(r.sources.debug).toBe("env");
   });
 });
+
+describe("sessionGc", () => {
+  it("defaults to disabled with a 7d threshold", () => {
+    const r = mergeConfig(null, {});
+    expect(r.sessionGc.enabled).toBe(false);
+    expect(r.sessionGc.maxAgeDays).toBe(7);
+  });
+
+  it("merges per-field from config", () => {
+    const cfg: OhAmConfig = { sessionGc: { enabled: true } };
+    const r = mergeConfig(cfg, {});
+    expect(r.sessionGc.enabled).toBe(true);
+    expect(r.sessionGc.maxAgeDays).toBe(7);
+  });
+
+  it("rejects malformed sessionGc", () => {
+    expect(() => validateConfig({ sessionGc: "on" })).toThrow(/sessionGc/);
+    expect(() => validateConfig({ sessionGc: { maxAgeDays: 0 } })).toThrow(/maxAgeDays/);
+  });
+});

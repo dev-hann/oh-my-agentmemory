@@ -24,6 +24,7 @@ import { onSessionCreated } from "./hooks/session-created.js";
 import { onSessionStatus } from "./hooks/session-idle.js";
 import { onTodowrite } from "./hooks/todowrite.js";
 import { dropSessionState } from "./hooks/todowrite.js";
+import { reactivateIfEnded, sweepStaleSessions } from "./hooks/session-gc.js";
 import { systemTransformHook } from "./hooks/system-transform.js";
 import type { TodoEntry } from "../../core/types.js";
 
@@ -57,6 +58,15 @@ export const OhMyAgentmemoryPlugin: Plugin = async (ctx) => {
     if (cfg.debug) console.error("[oh-am] mode resolve failed:", (e as Error).message);
   });
 
+  // Stale session GC — one-shot sweep on boot. Ends agentmemory sessions
+  // untouched for maxAgeDays (agentmemory-side only; opencode chat sessions
+  // are never modified).
+  if (cfg.sessionGc.enabled) {
+    void sweepStaleSessions(cfg).catch((e) => {
+      console.error("[oh-am] session gc failed:", (e as Error).message);
+    });
+  }
+
   const project =
     (ctx as { worktree?: string; project?: { id?: string } }).worktree ??
     ctx.project?.id ??
@@ -69,6 +79,14 @@ export const OhMyAgentmemoryPlugin: Plugin = async (ctx) => {
 
     // ── intent: keyword detection on user prompts ─────────────────────────
     "chat.message": async (input, output) => {
+      // gc: a prompt landing on an ended session (user resumed an old
+      // conversation) reactivates its agentmemory record.
+      const promptSid = pickSessionId(
+        (input as { sessionID?: string }).sessionID,
+        (input as { sessionId?: string }).sessionId,
+      );
+      if (promptSid) reactivateIfEnded(promptSid, project);
+
       await onChatMessage(
         input as { sessionID?: string; sessionId?: string; project?: string | null },
         output as { parts?: Array<{ type: string; text?: string }> },

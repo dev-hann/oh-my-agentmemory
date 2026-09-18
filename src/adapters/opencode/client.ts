@@ -360,9 +360,17 @@ export async function createCrystal(params: {
 }
 
 // ── Sessions ───────────────────────────────────────────────────────────────
-// Server route: GET /sessions?limit=N
+// Server routes:
+//   GET  /sessions?limit=N   → list
+//   POST /session/end         → mark ended (agentmemory-side only)
+//   POST /session/start       → create or reactivate
 
 interface SessionRow {
+  id: string;
+  status?: string;
+  startedAt?: string;
+  endedAt?: string | null;
+  updatedAt?: string;
   observationCount?: number;
 }
 
@@ -374,6 +382,27 @@ export async function listRecentSessions(limit = 10): Promise<SessionRow[]> {
   const r = await getJson<SessionsResponse>("/sessions", { limit });
   const sessions = r?.sessions ?? [];
   return sessions.slice(0, limit);
+}
+
+export async function listSessions(limit = 1000): Promise<SessionRow[]> {
+  const r = await getJson<SessionsResponse>("/sessions", { limit });
+  return r?.sessions ?? [];
+}
+
+export async function endSession(sessionId: string): Promise<boolean> {
+  return postVoid("/session/end", { sessionId }, 8000);
+}
+
+export async function restartSession(
+  sessionId: string,
+  project: string | null,
+): Promise<boolean> {
+  const p = project ?? "/";
+  return postVoid(
+    "/session/start",
+    { sessionId, title: null, parentID: null, version: null, project: p, cwd: p },
+    8000,
+  );
 }
 
 // ── Keyword pending state (in-memory, session-scoped) ──────────────────────

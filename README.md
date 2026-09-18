@@ -291,6 +291,12 @@ Create `~/.config/opencode/oh-am.jsonc`:
   "healthCheckTimeoutMs": 2000,
   "healthCheckFatal": false,
 
+  // stale session GC (agentmemory-side only; see "Stale session GC")
+  "sessionGc": {
+    "enabled": true,
+    "maxAgeDays": 7
+  },
+
   // verbose stderr logging
   "debug": false
 }
@@ -324,6 +330,15 @@ unreachable:
 - Default (`healthCheckFatal: false`): logs a warning, continues running
   (hooks will silently fail their HTTP calls)
 - `healthCheckFatal: true`: plugin returns no hooks, effectively disabled
+
+### Stale session GC
+
+`"sessionGc": { "enabled": true, "maxAgeDays": 7 }` runs a one-shot sweep on
+plugin boot that ends agentmemory sessions sitting `active` with no updates
+for more than 7 days. This is agentmemory bookkeeping only — the opencode
+chat session on disk is never touched. If a prompt later arrives for an
+ended session (the user resumed an old conversation), the record is
+automatically reactivated.
 
 ---
 

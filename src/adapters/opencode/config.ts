@@ -149,6 +149,22 @@ export function validateConfig(raw: unknown): OhAmConfig {
   if (cfg.healthCheckFatal !== undefined && typeof cfg.healthCheckFatal !== "boolean") {
     errors.push("healthCheckFatal must be a boolean");
   }
+  if (cfg.sessionGc !== undefined) {
+    if (typeof cfg.sessionGc !== "object" || cfg.sessionGc === null) {
+      errors.push("sessionGc must be an object");
+    } else {
+      const g = cfg.sessionGc as Record<string, unknown>;
+      if (g.enabled !== undefined && typeof g.enabled !== "boolean") {
+        errors.push("sessionGc.enabled must be a boolean");
+      }
+      if (
+        g.maxAgeDays !== undefined &&
+        (typeof g.maxAgeDays !== "number" || !(g.maxAgeDays > 0))
+      ) {
+        errors.push("sessionGc.maxAgeDays must be a positive number");
+      }
+    }
+  }
   if (cfg.debug !== undefined && typeof cfg.debug !== "boolean") {
     errors.push("debug must be a boolean");
   }
@@ -250,6 +266,13 @@ export function mergeConfig(
   const healthCheckTimeoutMs = fileConfig?.healthCheckTimeoutMs ?? DEFAULT_CONFIG.healthCheckTimeoutMs;
   const healthCheckFatal = fileConfig?.healthCheckFatal ?? DEFAULT_CONFIG.healthCheckFatal;
 
+  // sessionGc (per-field defaults)
+  const gcFile = fileConfig?.sessionGc ?? {};
+  const sessionGc = {
+    enabled: gcFile.enabled ?? DEFAULT_CONFIG.sessionGc.enabled,
+    maxAgeDays: gcFile.maxAgeDays ?? DEFAULT_CONFIG.sessionGc.maxAgeDays,
+  };
+
   // debug
   let debug = DEFAULT_CONFIG.debug;
   if (env.OH_AM_DEBUG === "1") {
@@ -271,6 +294,7 @@ export function mergeConfig(
     healthCheckOnBoot,
     healthCheckTimeoutMs,
     healthCheckFatal,
+    sessionGc,
     debug,
     sources,
   };
