@@ -80,7 +80,7 @@ export async function sweepStaleSessions(
     }
   }
 
-  if (staleCount > 0 || DEBUG) {
+  if (DEBUG) {
     console.error(
       `[oh-am] session-gc: ended ${staleCount} stale session(s) ` +
         `(${sessions.length} total, threshold ${cfg.sessionGc.maxAgeDays}d)`,
@@ -102,10 +102,12 @@ export function reactivateIfEnded(
   if (!endedSessionIds.has(sessionId)) return;
   endedSessionIds.delete(sessionId);
   void restartSession(sessionId, project).then((ok) => {
-    if (ok) {
-      console.error(`[oh-am] session-gc: reactivated ended session ${sessionId}`);
-    } else if (DEBUG) {
-      console.error(`[oh-am] session-gc: reactivation failed for ${sessionId}`);
+    if (DEBUG) {
+      console.error(
+        ok
+          ? `[oh-am] session-gc: reactivated ended session ${sessionId}`
+          : `[oh-am] session-gc: reactivation failed for ${sessionId}`,
+      );
     }
   });
 }
