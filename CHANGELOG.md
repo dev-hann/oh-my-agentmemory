@@ -6,6 +6,23 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added — observation compaction
+- On `session.idle`, scores the session's observations with a local
+  [jevos](https://github.com/feder-cr/jev) decision model (Jev-compatible
+  System One server) and writes a preserved-set / drop-candidates report to
+  `~/.local/share/oh-am/compaction/<sessionId>.json` — read-only v1,
+  agentmemory data is never mutated
+- Verdict rule `keep_call >= 0.35 OR importance >= 2`, calibrated on a
+  106-observation hand-labeled corpus: 0% missed keeps, ~28% drop rate
+  (all drops were lifecycle-hook noise), preserved file paths 4x the LLM
+  summary's
+- Per-observation scoring is a single `noul` question (~0.2 s each,
+  4 in parallel); scoring errors default to keep, and an unreachable jevos
+  skips compaction entirely so the existing pipeline is unaffected
+- Config: `"compaction": { "enabled": false, ... }` in oh-am.jsonc
+  (see README "Observation compaction"); one-shot enable via
+  `OH_AM_COMPACTION=1`
+
 ## [0.2.0] - 2026-09-18
 
 ### Added — stale session GC

@@ -372,6 +372,7 @@ interface SessionRow {
   endedAt?: string | null;
   updatedAt?: string;
   observationCount?: number;
+  firstPrompt?: string | null;
 }
 
 interface SessionsResponse {
@@ -403,6 +404,46 @@ export async function restartSession(
     { sessionId, title: null, parentID: null, version: null, project: p, cwd: p },
     8000,
   );
+}
+
+export async function findSession(
+  sessionId: string,
+): Promise<SessionRow | null> {
+  const sessions = await listSessions(1000);
+  return sessions.find((s) => s.id === sessionId) ?? null;
+}
+
+// ── Observations ───────────────────────────────────────────────────────────
+// Server route: GET /observations?sessionId=X&limit=N
+
+export interface ObservationRow {
+  id: string;
+  sessionId?: string;
+  type?: string | null;
+  title?: string | null;
+  subtitle?: string | null;
+  narrative?: string | null;
+  facts?: string[];
+  files?: string[];
+  concepts?: string[];
+  importance?: number;
+  confidence?: number;
+  timestamp?: string;
+}
+
+interface ObservationsListResponse {
+  observations?: ObservationRow[];
+}
+
+export async function listObservations(
+  sessionId: string,
+  limit = 500,
+): Promise<ObservationRow[]> {
+  const r = await getJson<ObservationsListResponse>("/observations", {
+    sessionId,
+    limit,
+  });
+  return r?.observations ?? [];
 }
 
 // ── Keyword pending state (in-memory, session-scoped) ──────────────────────

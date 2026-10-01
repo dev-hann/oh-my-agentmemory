@@ -20,6 +20,7 @@ import {
   createObservation,
   listActions,
 } from "../client.js";
+import { runSessionCompaction } from "../compaction-runner.js";
 import { isMcpOnly, isPhaseDisabled } from "./_shared.js";
 import { invalidateSessionContext } from "./system-transform.js";
 
@@ -39,15 +40,20 @@ interface SessionStatusProperties {
 export async function onSessionStatus(
   properties: SessionStatusProperties,
 ): Promise<void> {
-  if (isPhaseDisabled("archive")) return;
-  // In mcp-only mode, no capture plugin writes actions — skip the probe.
-  if (isMcpOnly()) return;
-
   const status = properties.status;
   if (!status || status.type !== "idle") return;
 
   const sessionId = properties.sessionID ?? properties.sessionId ?? null;
   if (!sessionId) return;
+
+  // Compaction runs independent of the archive phase gates below — it is
+  // read-only and self-gating (config compaction.enabled), and its failure
+  // must never affect the archive flow.
+  await runSessionCompaction(sessionId, properties.project ?? null);
+
+  if (isPhaseDisabled("archive")) return;
+  // In mcp-only mode, no capture plugin writes actions — skip the probe.
+  if (isMcpOnly()) return;
 
   // Refresh the system-transform session context so the directive reflects
   // current done-action count on the next turn.
