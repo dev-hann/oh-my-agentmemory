@@ -165,6 +165,46 @@ export function validateConfig(raw: unknown): OhAmConfig {
       }
     }
   }
+  if (cfg.compaction !== undefined) {
+    if (typeof cfg.compaction !== "object" || cfg.compaction === null) {
+      errors.push("compaction must be an object");
+    } else {
+      const c = cfg.compaction as Record<string, unknown>;
+      if (c.enabled !== undefined && typeof c.enabled !== "boolean") {
+        errors.push("compaction.enabled must be a boolean");
+      }
+      if (c.baseUrl !== undefined && typeof c.baseUrl !== "string") {
+        errors.push("compaction.baseUrl must be a string");
+      }
+      if (
+        c.keepThreshold !== undefined &&
+        (typeof c.keepThreshold !== "number" || c.keepThreshold < 0 || c.keepThreshold > 1)
+      ) {
+        errors.push("compaction.keepThreshold must be a number between 0 and 1");
+      }
+      if (
+        c.importanceGuard !== undefined &&
+        (typeof c.importanceGuard !== "number" || !(c.importanceGuard >= 0))
+      ) {
+        errors.push("compaction.importanceGuard must be a non-negative number");
+      }
+      if (
+        c.timeoutMs !== undefined &&
+        (typeof c.timeoutMs !== "number" || !(c.timeoutMs > 0))
+      ) {
+        errors.push("compaction.timeoutMs must be a positive number");
+      }
+      if (
+        c.maxObservations !== undefined &&
+        (typeof c.maxObservations !== "number" || !(c.maxObservations > 0))
+      ) {
+        errors.push("compaction.maxObservations must be a positive number");
+      }
+      if (c.outputDir !== undefined && typeof c.outputDir !== "string") {
+        errors.push("compaction.outputDir must be a string");
+      }
+    }
+  }
   if (cfg.debug !== undefined && typeof cfg.debug !== "boolean") {
     errors.push("debug must be a boolean");
   }
@@ -273,6 +313,23 @@ export function mergeConfig(
     maxAgeDays: gcFile.maxAgeDays ?? DEFAULT_CONFIG.sessionGc.maxAgeDays,
   };
 
+  // compaction (per-field defaults; env OH_AM_COMPACTION=1 forces enable)
+  const cpFile = fileConfig?.compaction ?? {};
+  const compaction = {
+    enabled:
+      env.OH_AM_COMPACTION === "1"
+        ? true
+        : cpFile.enabled ?? DEFAULT_CONFIG.compaction.enabled,
+    baseUrl: cpFile.baseUrl ?? DEFAULT_CONFIG.compaction.baseUrl,
+    keepThreshold: cpFile.keepThreshold ?? DEFAULT_CONFIG.compaction.keepThreshold,
+    importanceGuard:
+      cpFile.importanceGuard ?? DEFAULT_CONFIG.compaction.importanceGuard,
+    timeoutMs: cpFile.timeoutMs ?? DEFAULT_CONFIG.compaction.timeoutMs,
+    maxObservations:
+      cpFile.maxObservations ?? DEFAULT_CONFIG.compaction.maxObservations,
+    outputDir: cpFile.outputDir ?? DEFAULT_CONFIG.compaction.outputDir,
+  };
+
   // debug
   let debug = DEFAULT_CONFIG.debug;
   if (env.OH_AM_DEBUG === "1") {
@@ -295,6 +352,7 @@ export function mergeConfig(
     healthCheckTimeoutMs,
     healthCheckFatal,
     sessionGc,
+    compaction,
     debug,
     sources,
   };

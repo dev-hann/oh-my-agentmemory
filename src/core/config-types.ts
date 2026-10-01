@@ -30,6 +30,23 @@ export interface SessionGcConfig {
   maxAgeDays?: number;
 }
 
+export interface CompactionConfig {
+  /** Score observations with a local jevos decision model on session idle. Default false. */
+  enabled?: boolean;
+  /** jevos /v1/systemone endpoint. */
+  baseUrl?: string;
+  /** Minimum keep_call noul probability to keep an observation. Default 0.35. */
+  keepThreshold?: number;
+  /** Observations with importance >= this are always kept. Default 2. */
+  importanceGuard?: number;
+  /** Per-request jevos timeout in ms. Default 15000. */
+  timeoutMs?: number;
+  /** Max observations scored per session. Default 500. */
+  maxObservations?: number;
+  /** Directory for compaction reports. `~` expanded at runtime. */
+  outputDir?: string;
+}
+
 export interface OhAmConfig {
   /** agentmemory server URL. Env AGENTMEMORY_URL takes precedence. */
   url?: string;
@@ -55,6 +72,9 @@ export interface OhAmConfig {
   /** Stale session GC (agentmemory-side only). */
   sessionGc?: SessionGcConfig;
 
+  /** Observation compaction via local jevos decision model. */
+  compaction?: CompactionConfig;
+
   /** Verbose stderr logging. Env OH_AM_DEBUG=1 takes precedence. */
   debug?: boolean;
 }
@@ -70,6 +90,15 @@ export interface ResolvedConfig {
   healthCheckTimeoutMs: number;
   healthCheckFatal: boolean;
   sessionGc: { enabled: boolean; maxAgeDays: number };
+  compaction: {
+    enabled: boolean;
+    baseUrl: string;
+    keepThreshold: number;
+    importanceGuard: number;
+    timeoutMs: number;
+    maxObservations: number;
+    outputDir: string;
+  };
   debug: boolean;
   /** Where each top-level field came from, for debug logging. */
   sources: Record<string, "env" | "config" | "default">;
@@ -85,6 +114,15 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
   healthCheckTimeoutMs: 2000,
   healthCheckFatal: false,
   sessionGc: { enabled: false, maxAgeDays: 7 },
+  compaction: {
+    enabled: false,
+    baseUrl: "http://127.0.0.1:8017",
+    keepThreshold: 0.35,
+    importanceGuard: 2,
+    timeoutMs: 15000,
+    maxObservations: 500,
+    outputDir: "~/.local/share/oh-am/compaction",
+  },
   debug: false,
   sources: {},
 };

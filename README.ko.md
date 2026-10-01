@@ -246,6 +246,7 @@ ln -sfn ~/Documents/oh-my-agentmemory/src/adapters/opencode \
 | `AGENTMEMORY_SECRET` | `""` | 서버 인증 활성화 시 Bearer 토큰 |
 | `OH_AM_MODE` | `auto` | `auto` \| `full` \| `mcp-only` |
 | `OH_AM_DISABLE` | `""` | 비활성화할 목적 이름들: `enforcement`, `init`, `intent`, `archive`, `learning` |
+| `OH_AM_COMPACTION` | `0` | `1`로 설정하면 해당 실행만 관찰 컴팩션 강제 켜기 (아래 "관찰 컴팩션" 참고) |
 | `OH_AM_DEBUG` | `0` | `1`로 설정하면 stderr 상세 로깅 |
 
 예: `OH_AM_DEBUG=1 OH_AM_DISABLE=learning opencode`
@@ -285,6 +286,14 @@ ln -sfn ~/Documents/oh-my-agentmemory/src/adapters/opencode \
   "sessionGc": {
     "enabled": true,
     "maxAgeDays": 7
+  },
+
+  // 관찰 컴팩션 (읽기 전용 리포트; 아래 "관찰 컴팩션" 참고)
+  "compaction": {
+    "enabled": false,
+    "baseUrl": "http://127.0.0.1:8017",
+    "keepThreshold": 0.35,
+    "importanceGuard": 2
   },
 
   // stderr 상세 로깅
@@ -328,6 +337,29 @@ opencode 채팅 세션은 전혀 건드리지 않는다. 이후 종료된 세션
 도착하면(오래된 대화를 재개한 경우) 다음 프롬프트에서 기록이 자동으로
 재활성화된다. 스윕이 세션을 종료한 경우 TUI 토스트로 개수를 표시한다
 (headless 실행 등 TUI가 없으면 조용히 건너뛴다).
+
+### 관찰 컴팩션
+
+`"compaction": { "enabled": true }` — `session.idle`마다 세션 관찰을 로컬
+[jevos](https://github.com/feder-cr/jev) 결정 모델(Jev 호환 System One 서버,
+기본 `http://127.0.0.1:8017`)로 채점해 리포트를
+`~/.local/share/oh-am/compaction/<sessionId>.json`에 기록한다.
+
+판정 규칙 (106개 수동 라벨 코퍼스로 캘리브레이션):
+
+- **keep** 조건: `keep_call >= 0.35` **또는** `importance >= 2`
+- 실측: 누락(keep→drop 오류) 0%, 삭제율 ~28% (삭제 전부 라이프사이클 훅
+  노이즈), 보존 파일 경로는 기존 LLM 요약의 4배
+
+참고:
+
+- **v1은 읽기 전용** — agentmemory 데이터를 변경하지 않고, 리포트에
+  보존셋과 삭제 후보만 기록한다
+- 채점 에러는 keep으로 처리(보수적). jevos에 전혀 접근할 수 없으면
+  컴팩션 단계를 건너뛰어 기존 파이프라인에 영향 없음
+- 관찰당 noul 질문 하나를 ~0.2초에 답 (4개 병렬 채점)이라 idle 훅이
+  빠르게 유지된다
+- 설정 수정 없이 한 번만 켜기: `OH_AM_COMPACTION=1 opencode`
 
 ---
 

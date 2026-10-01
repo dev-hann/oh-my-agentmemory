@@ -256,6 +256,7 @@ Three layers, in descending precedence:
 | `AGENTMEMORY_SECRET` | `""` | Bearer token if auth enabled on server |
 | `OH_AM_MODE` | `auto` | `auto` \| `full` \| `mcp-only` |
 | `OH_AM_DISABLE` | `""` | Comma-list of purpose names to disable: `enforcement`, `init`, `intent`, `archive`, `learning` |
+| `OH_AM_COMPACTION` | `0` | Set to `1` to force-enable observation compaction for one run (see "Observation compaction") |
 | `OH_AM_DEBUG` | `0` | Set to `1` for verbose stderr logging |
 
 Example: `OH_AM_DEBUG=1 OH_AM_DISABLE=learning opencode`
@@ -295,6 +296,14 @@ Create `~/.config/opencode/oh-am.jsonc`:
   "sessionGc": {
     "enabled": true,
     "maxAgeDays": 7
+  },
+
+  // observation compaction (read-only reports; see "Observation compaction")
+  "compaction": {
+    "enabled": false,
+    "baseUrl": "http://127.0.0.1:8017",
+    "keepThreshold": 0.35,
+    "importanceGuard": 2
   },
 
   // verbose stderr logging
@@ -340,6 +349,31 @@ chat session on disk is never touched. If a prompt later arrives for an
 ended session (the user resumed an old conversation), the record is
 automatically reactivated. When the sweep ends sessions, a TUI toast shows
 the count (best-effort; headless runs skip it silently).
+
+### Observation compaction
+
+`"compaction": { "enabled": true }` scores a session's observations on
+`session.idle` with a local [jevos](https://github.com/feder-cr/jev)
+decision model (a Jev-compatible System One server, default
+`http://127.0.0.1:8017`) and writes a report to
+`~/.local/share/oh-am/compaction/<sessionId>.json`.
+
+Verdict rule, calibrated on a 106-observation hand-labeled corpus:
+
+- **keep** iff `keep_call >= 0.35` **OR** `importance >= 2`
+- Measured: 0% missed keeps, ~28% drop rate (all drops were lifecycle-hook
+  noise), preserved file paths 4x the LLM summary's
+
+Notes:
+
+- **Read-only v1** — agentmemory data is never mutated; the report lists
+  the preserved set and drop candidates for review
+- Scoring errors default to keep (conservative); if jevos is entirely
+  unreachable the compaction step is skipped and the existing pipeline
+  is unaffected
+- Each observation is one `noul` question answered in ~0.2 s (4 scored in
+  parallel), so the idle hook stays fast
+- One-shot enable without editing the config: `OH_AM_COMPACTION=1 opencode`
 
 ---
 
