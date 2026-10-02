@@ -10,18 +10,42 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - On `session.idle`, scores the session's observations with a local
   [jevos](https://github.com/feder-cr/jev) decision model (Jev-compatible
   System One server) and writes a preserved-set / drop-candidates report to
-  `~/.local/share/oh-am/compaction/<sessionId>.json` — read-only v1,
-  agentmemory data is never mutated
+  `~/.local/share/oh-am/compaction/<sessionId>.json`
 - Verdict rule `keep_call >= 0.35 OR importance >= 2`, calibrated on a
-  106-observation hand-labeled corpus: 0% missed keeps, ~28% drop rate
-  (all drops were lifecycle-hook noise), preserved file paths 4x the LLM
-  summary's
+  106-observation hand-labeled corpus and re-validated by full LLM
+  cross-judgment of 3,274 observations across 26 sessions:
+  **false-drop 0** (all 81 jev drops confirmed as lifecycle-hook noise)
 - Per-observation scoring is a single `noul` question (~0.2 s each,
   4 in parallel); scoring errors default to keep, and an unreachable jevos
   skips compaction entirely so the existing pipeline is unaffected
 - Config: `"compaction": { "enabled": false, ... }` in oh-am.jsonc
   (see README "Observation compaction"); one-shot enable via
   `OH_AM_COMPACTION=1`
+
+### Added — compaction v2: deletion execution
+- Two-layer filter: layer 1 drops structural noise without calling jev —
+  empty observations (age-gated by a 5-minute enrichment grace so raw
+  observations awaiting server enrichment are never mistaken for noise)
+  and lifecycle telemetry types (`config_loaded`, `llm_params`,
+  `step_finish`); layer 2 is the jev verdict above. Benchmark showed ~85%
+  of noise is structural
+- Drop verdicts are deleted for real via the audit-logged agentmemory
+  forget route (`POST /agentmemory/forget`); the report is stamped with
+  `deletedAt` and the session summary is regenerated so it no longer
+  references deleted noise
+- Dropped verdicts carry a content snapshot (title + ~500-char excerpt)
+  for post-deletion audit and manual re-ingest; guarded
+  (`importance >= 2`) verdicts are never deleted; failed deletes retry on
+  the next run
+- Stale session GC now runs the same compaction pipeline for stale
+  sessions the idle hook missed (skips sessions with an existing report),
+  so historical noise cleans itself up over time
+- Controls: `"delete": false` for shadow mode (reports only), env
+  `OH_AM_COMPACTION_DELETE=off|on` overrides the config
+- Benchmark tooling: `scripts/benchmark-backfill.ts` (backfill scoring +
+  content export), `scripts/benchmark-compare.ts` (jev vs LLM-verdict
+  agreement report), `scripts/e2e-compaction-check.ts` (live end-to-end
+  verification)
 
 ## [0.2.0] - 2026-09-18
 

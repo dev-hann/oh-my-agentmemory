@@ -257,6 +257,7 @@ Three layers, in descending precedence:
 | `OH_AM_MODE` | `auto` | `auto` \| `full` \| `mcp-only` |
 | `OH_AM_DISABLE` | `""` | Comma-list of purpose names to disable: `enforcement`, `init`, `intent`, `archive`, `learning` |
 | `OH_AM_COMPACTION` | `0` | Set to `1` to force-enable observation compaction for one run (see "Observation compaction") |
+| `OH_AM_COMPACTION_DELETE` | — | `off` disables drop-deletion (shadow mode), `on` forces it; overrides the config (see "Observation compaction") |
 | `OH_AM_DEBUG` | `0` | Set to `1` for verbose stderr logging |
 
 Example: `OH_AM_DEBUG=1 OH_AM_DISABLE=learning opencode`
@@ -298,12 +299,14 @@ Create `~/.config/opencode/oh-am.jsonc`:
     "maxAgeDays": 7
   },
 
-  // observation compaction (read-only reports; see "Observation compaction")
+  // observation compaction (see "Observation compaction")
   "compaction": {
     "enabled": false,
     "baseUrl": "http://127.0.0.1:8017",
     "keepThreshold": 0.35,
-    "importanceGuard": 2
+    "importanceGuard": 2,
+    // set to false for shadow mode (reports only, nothing deleted)
+    "delete": true
   },
 
   // verbose stderr logging
@@ -352,28 +355,46 @@ the count (best-effort; headless runs skip it silently).
 
 ### Observation compaction
 
-`"compaction": { "enabled": true }` scores a session's observations on
-`session.idle` with a local [jevos](https://github.com/feder-cr/jev)
-decision model (a Jev-compatible System One server, default
-`http://127.0.0.1:8017`) and writes a report to
-`~/.local/share/oh-am/compaction/<sessionId>.json`.
+`"compaction": { "enabled": true }` cleans a session's observations when it
+goes idle, using a two-layer filter:
 
-Verdict rule, calibrated on a 106-observation hand-labeled corpus:
+**Layer 1 — structural (no model).** Empty observations (no title *and*
+no narrative, older than a 5-minute enrichment grace) and lifecycle
+telemetry types (`config_loaded`, `llm_params`, `step_finish`) are dropped
+outright without calling jev. A 3,274-observation benchmark showed ~85% of
+noise is identifiable this way, and jev returns a uniform 0.512 on empty
+state that no threshold can filter.
+
+**Layer 2 — jev.** Everything else is scored by a local
+[jevos](https://github.com/feder-cr/jev) decision model (a Jev-compatible
+System One server, default `http://127.0.0.1:8017`):
 
 - **keep** iff `keep_call >= 0.35` **OR** `importance >= 2`
-- Measured: 0% missed keeps, ~28% drop rate (all drops were lifecycle-hook
-  noise), preserved file paths 4x the LLM summary's
+- Cross-validated by full LLM re-judgment of 3,274 observations across 26
+  sessions: **false-drop 0** (jev never dropped something the LLM kept),
+  all 81 jev drops confirmed as lifecycle-hook noise
 
-Notes:
+**Deletion.** Drop verdicts are deleted for real via the audit-logged
+agentmemory forget route, the report is stamped with `deletedAt`, and the
+session summary is regenerated so it no longer references deleted noise.
+Dropped verdicts carry a content snapshot (title + ~500-char excerpt) for
+post-deletion audit and manual re-ingest if ever needed. Guarded
+(`importance >= 2`) verdicts are never deleted. A failed delete leaves the
+report unmarked so the next run (idle or GC sweep) retries.
 
-- **Read-only v1** — agentmemory data is never mutated; the report lists
-  the preserved set and drop candidates for review
+**Stale session GC hookup.** The boot-time sweep runs the same pipeline for
+stale sessions the idle hook missed (crashed or abandoned), skipping
+sessions that already have a report — historical noise cleans itself up
+over time.
+
+**Controls.**
+
+- `"delete": false` — shadow mode: reports only, nothing deleted
+- `OH_AM_COMPACTION_DELETE=off` — emergency stop that overrides the config
+- `OH_AM_COMPACTION_DELETE=on` — force deletion on regardless of config
 - Scoring errors default to keep (conservative); if jevos is entirely
-  unreachable the compaction step is skipped and the existing pipeline
-  is unaffected
-- Each observation is one `noul` question answered in ~0.2 s (4 scored in
-  parallel), so the idle hook stays fast
-- One-shot enable without editing the config: `OH_AM_COMPACTION=1 opencode`
+  unreachable the compaction step is skipped entirely
+- Reports live at `~/.local/share/oh-am/compaction/<sessionId>.json`
 
 ---
 

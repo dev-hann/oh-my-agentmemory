@@ -15,6 +15,7 @@
  */
 
 import { endSession, listSessions, restartSession } from "../client.js";
+import { runSessionCompaction, reportExists } from "../compaction-runner.js";
 import type { ResolvedConfig } from "../../../core/config-types.js";
 
 const DEBUG = process.env.OH_AM_DEBUG === "1";
@@ -71,6 +72,23 @@ export async function sweepStaleSessions(
         staleCount++;
         if (await endSession(s.id)) {
           endedSessionIds.add(s.id);
+          // Compaction catch-up: sessions the idle hook missed (crashed or
+          // abandoned) get scored + cleaned here. Skips sessions that
+          // already have a report so a boot never re-scores the world.
+          if (cfg.compaction.enabled) {
+            try {
+              if (!(await reportExists(cfg.compaction.outputDir, s.id))) {
+                await runSessionCompaction(s.id, null);
+              }
+            } catch (e) {
+              if (DEBUG) {
+                console.error(
+                  `[oh-am] session-gc: compaction failed for ${s.id}:`,
+                  (e as Error).message,
+                );
+              }
+            }
+          }
         } else if (DEBUG) {
           console.error(`[oh-am] session-gc: end failed for ${s.id}`);
         }

@@ -203,6 +203,9 @@ export function validateConfig(raw: unknown): OhAmConfig {
       if (c.outputDir !== undefined && typeof c.outputDir !== "string") {
         errors.push("compaction.outputDir must be a string");
       }
+      if (c.delete !== undefined && typeof c.delete !== "boolean") {
+        errors.push("compaction.delete must be a boolean");
+      }
     }
   }
   if (cfg.debug !== undefined && typeof cfg.debug !== "boolean") {
@@ -328,6 +331,7 @@ export function mergeConfig(
     maxObservations:
       cpFile.maxObservations ?? DEFAULT_CONFIG.compaction.maxObservations,
     outputDir: cpFile.outputDir ?? DEFAULT_CONFIG.compaction.outputDir,
+    delete: cpFile.delete ?? DEFAULT_CONFIG.compaction.delete,
   };
 
   // debug

@@ -247,6 +247,7 @@ ln -sfn ~/Documents/oh-my-agentmemory/src/adapters/opencode \
 | `OH_AM_MODE` | `auto` | `auto` \| `full` \| `mcp-only` |
 | `OH_AM_DISABLE` | `""` | 비활성화할 목적 이름들: `enforcement`, `init`, `intent`, `archive`, `learning` |
 | `OH_AM_COMPACTION` | `0` | `1`로 설정하면 해당 실행만 관찰 컴팩션 강제 켜기 (아래 "관찰 컴팩션" 참고) |
+| `OH_AM_COMPACTION_DELETE` | — | `off`면 드랍 삭제 비활성화(섀도), `on`이면 강제 활성화. 설정 우선 (아래 "관찰 컴팩션" 참고) |
 | `OH_AM_DEBUG` | `0` | `1`로 설정하면 stderr 상세 로깅 |
 
 예: `OH_AM_DEBUG=1 OH_AM_DISABLE=learning opencode`
@@ -340,26 +341,43 @@ opencode 채팅 세션은 전혀 건드리지 않는다. 이후 종료된 세션
 
 ### 관찰 컴팩션
 
-`"compaction": { "enabled": true }` — `session.idle`마다 세션 관찰을 로컬
-[jevos](https://github.com/feder-cr/jev) 결정 모델(Jev 호환 System One 서버,
-기본 `http://127.0.0.1:8017`)로 채점해 리포트를
-`~/.local/share/oh-am/compaction/<sessionId>.json`에 기록한다.
+`"compaction": { "enabled": true }` — 세션이 idle이 되면 2층 필터로 관찰을
+정리한다.
 
-판정 규칙 (106개 수동 라벨 코퍼스로 캘리브레이션):
+**1층 — 구조 룰 (모델 미사용).** 빈 관찰(title·narrative 모두 없음,
+5분 인리치먼트 그레이스 경과분)과 라이프사이클 텔레메트리 타입
+(`config_loaded`, `llm_params`, `step_finish`)은 jev 호출 없이 즉시
+드랍. 3,274관찰 벤치마크에서 노이즈의 ~85%가 여기서 식별됐고, 빈
+입력에 jev가 균일 0.512를 반환해 임계값으로 걸러지지 않는다는
+실측도 반영됨.
+
+**2층 — jev 채점.** 나머지는 로컬
+[jevos](https://github.com/feder-cr/jev) 결정 모델(Jev 호환 System One
+서버, 기본 `http://127.0.0.1:8017`)로 채점:
 
 - **keep** 조건: `keep_call >= 0.35` **또는** `importance >= 2`
-- 실측: 누락(keep→drop 오류) 0%, 삭제율 ~28% (삭제 전부 라이프사이클 훅
-  노이즈), 보존 파일 경로는 기존 LLM 요약의 4배
+- 26세션 3,274관찰의 LLM 전수 교차판정으로 재검증: **false-drop 0**
+  (jev가 드랍한 81개 전부 LLM도 드랍 동의 — 라이프사이클 훅 노이즈)
 
-참고:
+**삭제 실행.** 드랍 판정은 감사로그가 남는 agentmemory forget 라우트로
+실제 삭제되고, 리포트에 `deletedAt`이 찍히며, 세션 요약이 재생성돼
+삭제된 노이즈를 더 참조하지 않는다. 드랍 판정에는 내용 스냅샷
+(title + ~500자 발췌)이 함께 저장돼 사후 감사·수동 재주입이 가능하다.
+가드(`importance >= 2`) 판정은 절대 삭제되지 않고, 삭제 실패 시
+다음 실행(idle 또는 GC 스윕)에서 재시도된다.
 
-- **v1은 읽기 전용** — agentmemory 데이터를 변경하지 않고, 리포트에
-  보존셋과 삭제 후보만 기록한다
+**스테일 세션 GC 연동.** 부팅 시 스윕이 idle 훅이 놓친 세션(크래시·
+방치)에 같은 파이프라인을 돌린다(리포트 있는 세션은 스킵) — 과거
+노이즈가 시간이 지나며 자동 정리된다.
+
+**제어:**
+
+- `"delete": false` — 섀도 모드: 리포트만 기록, 삭제 없음
+- `OH_AM_COMPACTION_DELETE=off` — 설정을 무시하는 비상 정지
+- `OH_AM_COMPACTION=1` — 설정 수정 없이 한 번만 켜기
 - 채점 에러는 keep으로 처리(보수적). jevos에 전혀 접근할 수 없으면
   컴팩션 단계를 건너뛰어 기존 파이프라인에 영향 없음
-- 관찰당 noul 질문 하나를 ~0.2초에 답 (4개 병렬 채점)이라 idle 훅이
-  빠르게 유지된다
-- 설정 수정 없이 한 번만 켜기: `OH_AM_COMPACTION=1 opencode`
+- 리포트 위치: `~/.local/share/oh-am/compaction/<sessionId>.json`
 
 ---
 

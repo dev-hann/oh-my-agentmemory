@@ -446,6 +446,26 @@ export async function listObservations(
   return r?.observations ?? [];
 }
 
+// ── Observation deletion + re-summarize ─────────────────────────────────────
+// Server route: POST /agentmemory/forget (mem::forget) — removes observations
+// by id, drops them from the search + vector indexes, and records an audit
+// entry. Body: { sessionId, observationIds }.
+
+export async function forgetObservations(
+  sessionId: string,
+  observationIds: string[],
+  timeoutMs = 15000,
+): Promise<boolean> {
+  return postVoid("/forget", { sessionId, observationIds }, timeoutMs);
+}
+
+export async function summarizeSession(
+  sessionId: string,
+  timeoutMs = 60000,
+): Promise<boolean> {
+  return postVoid("/summarize", { sessionId }, timeoutMs);
+}
+
 // ── Keyword pending state (in-memory, session-scoped) ──────────────────────
 // Chat-message hook writes here, system-transform reads. Adapters do not
 // share memory across plugin loads, so this is best-effort: keywords only

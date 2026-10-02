@@ -11,7 +11,7 @@
  * did not run" (the existing pipeline is untouched).
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import {
@@ -19,11 +19,13 @@ import {
   buildState,
   compactObservations,
   dropRate,
+  structuralDropReason,
   type CompactObservation,
   type CompactionResult,
 } from "../../core/compaction.js";
 import { findSession, listObservations } from "./client.js";
 import { getConfig } from "./hooks/_shared.js";
+import { deleteDroppedObservations } from "./compaction-deleter.js";
 
 const DEBUG = process.env.OH_AM_DEBUG === "1";
 const CONCURRENCY = 4;
@@ -54,21 +56,24 @@ export async function runSessionCompaction(
       facts: o.facts,
       files: o.files,
       importance: o.importance,
+      timestamp: o.timestamp,
     }));
 
     const goal = (sessionRow?.firstPrompt ?? "").slice(0, 200) ||
       "recent coding session observations";
 
     const scores = new Map<string, number | null>();
-    const queue = observations.map(
-      (o) => async (): Promise<void> => {
-        try {
-          scores.set(o.id, await scoreKeepCall(cfg.baseUrl, cfg.timeoutMs, buildState(goal, o)));
-        } catch {
-          scores.set(o.id, null);
-        }
-      },
-    );
+    const queue = observations
+      .filter((o) => structuralDropReason(o) === null)
+      .map(
+        (o) => async (): Promise<void> => {
+          try {
+            scores.set(o.id, await scoreKeepCall(cfg.baseUrl, cfg.timeoutMs, buildState(goal, o)));
+          } catch {
+            scores.set(o.id, null);
+          }
+        },
+      );
     await runWithConcurrency(queue, CONCURRENCY);
 
     const result = compactObservations(
@@ -79,7 +84,8 @@ export async function runSessionCompaction(
       { sessionId, project },
     );
 
-    if (result.scoredCount === 0 && result.verdicts.length > 0) {
+    const needScoreCount = queue.length;
+    if (needScoreCount > 0 && result.scoredCount === 0) {
       if (DEBUG) {
         console.error(
           `[oh-am] compaction skipped for ${sessionId}: jevos unreachable (${result.errorCount} errors)`,
@@ -89,6 +95,7 @@ export async function runSessionCompaction(
     }
 
     await writeReport(cfg.outputDir, result);
+    await deleteDroppedObservations(result, cfg);
 
     if (DEBUG) {
       console.error(
@@ -149,7 +156,7 @@ async function runWithConcurrency(
   await Promise.all(workers);
 }
 
-async function writeReport(
+export async function writeReport(
   outputDir: string,
   result: CompactionResult,
 ): Promise<void> {
@@ -159,4 +166,20 @@ async function writeReport(
   await mkdir(dir, { recursive: true });
   const file = path.join(dir, `${result.sessionId}.json`);
   await writeFile(file, JSON.stringify(result, null, 2), "utf8");
+}
+
+/** Whether a compaction report already exists on disk for this session. */
+export async function reportExists(
+  outputDir: string,
+  sessionId: string,
+): Promise<boolean> {
+  const dir = outputDir.startsWith("~")
+    ? path.join(os.homedir(), outputDir.slice(1))
+    : outputDir;
+  try {
+    await stat(path.join(dir, `${sessionId}.json`));
+    return true;
+  } catch {
+    return false;
+  }
 }
