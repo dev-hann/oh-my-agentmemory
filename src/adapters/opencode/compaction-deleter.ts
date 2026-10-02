@@ -8,8 +8,9 @@
  * references deleted noise.
  *
  * Safety:
- *   - config compaction.delete=false or env OH_AM_COMPACTION_DELETE=off
- *     disables execution entirely (shadow mode — reports only).
+ *   - env OH_AM_COMPACTION_DELETE=off disables execution entirely
+ *     (reports are still written). Disable compaction.enabled to stop
+ *     scoring as well.
  *   - guarded verdicts (importance >= guard) are never in the drop set.
  *   - Every failure path returns without throwing; verdicts left unmarked
  *     are retried on the next compaction run (idle or GC sweep).
@@ -22,10 +23,12 @@ import type { CompactionResult, CompactionVerdict } from "../../core/compaction.
 
 const DEBUG = process.env.OH_AM_DEBUG === "1";
 
-export function deletionEnabled(cfg: CompactionConfig): boolean {
-  if (process.env.OH_AM_COMPACTION_DELETE === "off") return false;
-  if (process.env.OH_AM_COMPACTION_DELETE === "on") return true;
-  return cfg.delete !== false;
+/**
+ * Deletion is always on when compaction is enabled; env OH_AM_COMPACTION_DELETE=off
+ * is the emergency brake. To stop scoring as well, disable compaction.enabled.
+ */
+export function deletionEnabled(): boolean {
+  return process.env.OH_AM_COMPACTION_DELETE !== "off";
 }
 
 function deletableCandidates(result: CompactionResult): CompactionVerdict[] {
@@ -41,7 +44,7 @@ export async function deleteDroppedObservations(
   result: CompactionResult,
   cfg: CompactionConfig,
 ): Promise<number> {
-  if (!deletionEnabled(cfg)) return 0;
+  if (!deletionEnabled()) return 0;
 
   const candidates = deletableCandidates(result);
   if (candidates.length === 0) return 0;

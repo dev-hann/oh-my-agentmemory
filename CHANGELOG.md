@@ -40,8 +40,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Stale session GC now runs the same compaction pipeline for stale
   sessions the idle hook missed (skips sessions with an existing report),
   so historical noise cleans itself up over time
-- Controls: `"delete": false` for shadow mode (reports only), env
-  `OH_AM_COMPACTION_DELETE=off|on` overrides the config
+- Controls: deletion runs whenever compaction is enabled; env
+  `OH_AM_COMPACTION_DELETE=off` is the emergency brake (reports are still
+  written), and `compaction.enabled=false` stops scoring as well
 - Benchmark tooling: `scripts/benchmark-backfill.ts` (backfill scoring +
   content export), `scripts/benchmark-compare.ts` (jev vs LLM-verdict
   agreement report), `scripts/e2e-compaction-check.ts` (live end-to-end

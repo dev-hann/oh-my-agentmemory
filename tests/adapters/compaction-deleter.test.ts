@@ -22,7 +22,7 @@ const mockedForget = vi.mocked(forgetObservations);
 const mockedSummarize = vi.mocked(summarizeSession);
 const mockedWriteReport = vi.mocked(writeReport);
 
-const CFG: CompactionConfig = { delete: true, outputDir: "/tmp/oh-am-test" };
+const CFG: CompactionConfig = { outputDir: "/tmp/oh-am-test" };
 
 function makeResult(verdicts: CompactionResult["verdicts"]): CompactionResult {
   return {
@@ -44,20 +44,13 @@ beforeEach(() => {
 });
 
 describe("deletionEnabled", () => {
-  it("follows config by default", () => {
-    expect(deletionEnabled({ delete: true })).toBe(true);
-    expect(deletionEnabled({ delete: false })).toBe(false);
-    expect(deletionEnabled({})).toBe(true); // default on
+  it("is on by default", () => {
+    expect(deletionEnabled()).toBe(true);
   });
 
-  it("env off overrides config on", () => {
+  it("env off is the emergency brake", () => {
     process.env.OH_AM_COMPACTION_DELETE = "off";
-    expect(deletionEnabled({ delete: true })).toBe(false);
-  });
-
-  it("env on overrides config off", () => {
-    process.env.OH_AM_COMPACTION_DELETE = "on";
-    expect(deletionEnabled({ delete: false })).toBe(true);
+    expect(deletionEnabled()).toBe(false);
   });
 });
 
@@ -105,12 +98,13 @@ describe("deleteDroppedObservations", () => {
     expect(mockedForget).toHaveBeenCalledWith("ses_test", ["pending"]);
   });
 
-  it("returns 0 without side effects when deletion is disabled", async () => {
+  it("returns 0 without side effects when the env brake is set", async () => {
+    process.env.OH_AM_COMPACTION_DELETE = "off";
     const result = makeResult([
       { id: "drop1", keepCall: 0.2, importance: 1, kept: false, guarded: false, reason: "jev" },
     ]);
 
-    const n = await deleteDroppedObservations(result, { delete: false });
+    const n = await deleteDroppedObservations(result, CFG);
 
     expect(n).toBe(0);
     expect(mockedForget).not.toHaveBeenCalled();

@@ -247,7 +247,7 @@ ln -sfn ~/Documents/oh-my-agentmemory/src/adapters/opencode \
 | `OH_AM_MODE` | `auto` | `auto` \| `full` \| `mcp-only` |
 | `OH_AM_DISABLE` | `""` | 비활성화할 목적 이름들: `enforcement`, `init`, `intent`, `archive`, `learning` |
 | `OH_AM_COMPACTION` | `0` | `1`로 설정하면 해당 실행만 관찰 컴팩션 강제 켜기 (아래 "관찰 컴팩션" 참고) |
-| `OH_AM_COMPACTION_DELETE` | — | `off`면 드랍 삭제 비활성화(섀도), `on`이면 강제 활성화. 설정 우선 (아래 "관찰 컴팩션" 참고) |
+| `OH_AM_COMPACTION_DELETE` | — | `off`면 삭제만 멈추는 비상 정지 (리포트는 계속 기록). 아래 "관찰 컴팩션" 참고 |
 | `OH_AM_DEBUG` | `0` | `1`로 설정하면 stderr 상세 로깅 |
 
 예: `OH_AM_DEBUG=1 OH_AM_DISABLE=learning opencode`
@@ -372,8 +372,9 @@ opencode 채팅 세션은 전혀 건드리지 않는다. 이후 종료된 세션
 
 **제어:**
 
-- `"delete": false` — 섀도 모드: 리포트만 기록, 삭제 없음
-- `OH_AM_COMPACTION_DELETE=off` — 설정을 무시하는 비상 정지
+- 삭제는 컴팩션 활성 시 항상 실행 — 별도 설정 토글 없음
+- `OH_AM_COMPACTION_DELETE=off` — 삭제만 멈추는 비상 정지 (리포트는 계속
+  기록). 스코어링까지 끄려면 `compaction.enabled: false`
 - `OH_AM_COMPACTION=1` — 설정 수정 없이 한 번만 켜기
 - 채점 에러는 keep으로 처리(보수적). jevos에 전혀 접근할 수 없으면
   컴팩션 단계를 건너뛰어 기존 파이프라인에 영향 없음

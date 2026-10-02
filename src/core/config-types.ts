@@ -45,13 +45,6 @@ export interface CompactionConfig {
   maxObservations?: number;
   /** Directory for compaction reports. `~` expanded at runtime. */
   outputDir?: string;
-  /**
-   * Actually delete drop-verdict observations after scoring (via the
-   * agentmemory forget route, audit-logged). When false, reports are
-   * written but nothing is deleted (shadow mode). Default true.
-   * Emergency off switch: env OH_AM_COMPACTION_DELETE=off overrides to false.
-   */
-  delete?: boolean;
 }
 
 export interface OhAmConfig {
@@ -105,7 +98,6 @@ export interface ResolvedConfig {
     timeoutMs: number;
     maxObservations: number;
     outputDir: string;
-    delete: boolean;
   };
   debug: boolean;
   /** Where each top-level field came from, for debug logging. */
@@ -130,7 +122,6 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
     timeoutMs: 15000,
     maxObservations: 500,
     outputDir: "~/.local/share/oh-am/compaction",
-    delete: true,
   },
   debug: false,
   sources: {},

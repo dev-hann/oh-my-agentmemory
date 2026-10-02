@@ -257,7 +257,7 @@ Three layers, in descending precedence:
 | `OH_AM_MODE` | `auto` | `auto` \| `full` \| `mcp-only` |
 | `OH_AM_DISABLE` | `""` | Comma-list of purpose names to disable: `enforcement`, `init`, `intent`, `archive`, `learning` |
 | `OH_AM_COMPACTION` | `0` | Set to `1` to force-enable observation compaction for one run (see "Observation compaction") |
-| `OH_AM_COMPACTION_DELETE` | — | `off` disables drop-deletion (shadow mode), `on` forces it; overrides the config (see "Observation compaction") |
+| `OH_AM_COMPACTION_DELETE` | — | `off` is the deletion emergency brake (reports still written); see "Observation compaction" |
 | `OH_AM_DEBUG` | `0` | Set to `1` for verbose stderr logging |
 
 Example: `OH_AM_DEBUG=1 OH_AM_DISABLE=learning opencode`
@@ -304,9 +304,7 @@ Create `~/.config/opencode/oh-am.jsonc`:
     "enabled": false,
     "baseUrl": "http://127.0.0.1:8017",
     "keepThreshold": 0.35,
-    "importanceGuard": 2,
-    // set to false for shadow mode (reports only, nothing deleted)
-    "delete": true
+    "importanceGuard": 2
   },
 
   // verbose stderr logging
@@ -389,9 +387,11 @@ over time.
 
 **Controls.**
 
-- `"delete": false` — shadow mode: reports only, nothing deleted
-- `OH_AM_COMPACTION_DELETE=off` — emergency stop that overrides the config
-- `OH_AM_COMPACTION_DELETE=on` — force deletion on regardless of config
+- Deletion runs whenever compaction is enabled — there is no separate
+  config toggle
+- `OH_AM_COMPACTION_DELETE=off` — emergency brake that stops deletion
+  (reports are still written); disable `compaction.enabled` to stop
+  scoring as well
 - Scoring errors default to keep (conservative); if jevos is entirely
   unreachable the compaction step is skipped entirely
 - Reports live at `~/.local/share/oh-am/compaction/<sessionId>.json`
