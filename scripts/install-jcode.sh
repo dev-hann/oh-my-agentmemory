@@ -241,8 +241,32 @@ CFG
   fi
 
   # 5. Register the agentmemory MCP server (jcode reads ~/.jcode/mcp.json).
+  # Prefer a globally-installed agentmemory-mcp binary: skipping npx removes
+  # a per-session registry check and an extra npm wrapper process (~50 MB).
+  if command -v agentmemory-mcp >/dev/null 2>&1; then
+    local mcp_cmd="agentmemory-mcp"
+  elif command -v npx >/dev/null 2>&1; then
+    echo "  ! agentmemory-mcp not global — falling back to npx (slower start)."
+    echo "    Recommended: npm i -g @agentmemory/mcp"
+    local mcp_cmd="npx"
+  else
+    echo "  ! neither agentmemory-mcp nor npx found — register MCP manually"
+    return
+  fi
   if [ ! -f "${JCODE_DIR}/mcp.json" ]; then
-    cat > "${JCODE_DIR}/mcp.json" <<'MCPCFG'
+    if [ "$mcp_cmd" = "agentmemory-mcp" ]; then
+      cat > "${JCODE_DIR}/mcp.json" <<'MCPCFG'
+{
+  "mcpServers": {
+    "agentmemory": {
+      "command": "agentmemory-mcp",
+      "timeout_secs": 60
+    }
+  }
+}
+MCPCFG
+    else
+      cat > "${JCODE_DIR}/mcp.json" <<'MCPCFG'
 {
   "mcpServers": {
     "agentmemory": {
@@ -253,9 +277,13 @@ CFG
   }
 }
 MCPCFG
-    echo "  + mcp.json → ${JCODE_DIR}/mcp.json"
+    fi
+    echo "  + mcp.json → ${JCODE_DIR}/mcp.json (${mcp_cmd})"
   elif grep -q '"agentmemory"' "${JCODE_DIR}/mcp.json" 2>/dev/null; then
     echo "  = agentmemory MCP already registered"
+    if grep -q '"npx"' "${JCODE_DIR}/mcp.json" && [ "$mcp_cmd" = "agentmemory-mcp" ]; then
+      echo "    note: still using npx — consider re-running after npm i -g @agentmemory/mcp"
+    fi
   else
     echo "  ! ${JCODE_DIR}/mcp.json exists without agentmemory — add it manually"
   fi
