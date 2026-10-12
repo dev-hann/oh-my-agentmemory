@@ -237,6 +237,7 @@ The same write-side enforcement runs on [jcode](https://github.com/1jehuang/jcod
 
 - [jcode](https://github.com/1jehuang/jcode) with [configurable overlay files](https://github.com/1jehuang/jcode/pull/1802) merged (v0.96+; check `jcode version`)
 - [bun](https://bun.sh)
+- `npm i -g oh-my-agentmemory @agentmemory/mcp` (the adapter scripts and the agentmemory MCP binary)
 - A running agentmemory server (default `http://localhost:3111`)
 
 ### Install
@@ -256,7 +257,7 @@ What it installs:
 - Hook entry + feedback scripts in `~/.jcode/plugins/oh-am/`
 - Lifecycle hooks in `~/.jcode/config.toml` (`[hooks]` array values): `session_start` → init, `post_tool` → learning + bridge, `turn_end` → archive, `session_end` → cleanup, `post_tool_feedback` → throttled reminder
 - The policy overlay at `~/.jcode/overlays/oh-am.md`, registered under `[prompt] overlay_files`
-- The agentmemory MCP server in `~/.jcode/mcp.json` (same `npx @agentmemory/mcp` command as the opencode config)
+- The agentmemory MCP server in `~/.jcode/mcp.json` (global `agentmemory-mcp` binary — no npx at session start)
 - `~/.jcode/oh-am.jsonc` with defaults if absent (falls back to the opencode config when missing)
 
 ### Verify

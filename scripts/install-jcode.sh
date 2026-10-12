@@ -270,8 +270,7 @@ MCPCFG
 {
   "mcpServers": {
     "agentmemory": {
-      "command": "npx",
-      "args": ["-y", "@agentmemory/mcp"],
+      "command": "agentmemory-mcp",
       "timeout_secs": 60
     }
   }

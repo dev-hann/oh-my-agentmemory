@@ -227,6 +227,7 @@ ln -sfn ~/Documents/oh-my-agentmemory/src/adapters/opencode \
 
 - [설정 가능한 오버레이 파일](https://github.com/1jehuang/jcode/pull/1802)이 병합된 [jcode](https://github.com/1jehuang/jcode) (v0.96+, `jcode version`으로 확인)
 - [Bun](https://bun.sh)
+- `npm i -g oh-my-agentmemory @agentmemory/mcp` (어댑터 스크립트 + agentmemory MCP 바이너리)
 - 실행 중인 agentmemory 서버 (기본 `http://localhost:3111`)
 
 ### 설치
@@ -246,7 +247,7 @@ scripts/install-jcode.sh --remove   # 제거
 - `~/.jcode/plugins/oh-am/`의 훅 entry + feedback 스크립트
 - `~/.jcode/config.toml` 라이프사이클 훅 (`[hooks]` 배열 값): `session_start` → init, `post_tool` → learning + bridge, `turn_end` → archive, `session_end` → cleanup, `post_tool_feedback` → 스로틀 리마인더
 - `~/.jcode/overlays/oh-am.md` 정책 오버레이, `[prompt] overlay_files`에 등록
-- `~/.jcode/mcp.json`의 agentmemory MCP 서버 (opencode 설정과 동일한 `npx @agentmemory/mcp`)
+- `~/.jcode/mcp.json`의 agentmemory MCP 서버 (전역 `agentmemory-mcp` 바이너리 — 세션 시작 시 npx 없음)
 - 없으면 기본값의 `~/.jcode/oh-am.jsonc` (없을 시 opencode 설정으로 폴백)
 
 ### 확인
