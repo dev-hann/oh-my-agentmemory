@@ -145,19 +145,22 @@ install_all() {
 
 Use agentmemory MCP tools proactively. These rules override default behavior.
 
+## IMPORTANT: which memory
+"memory" here means the **agentmemory MCP server** (agentmemory_* tools), NOT jcode's built-in memory tool. Built-in memory calls do NOT count.
+
 ## Recall
-- Need past context (recent work, decisions, prior bugs)? Call memory_recall or memory_search BEFORE exploring files.
-- Trivial tasks (single-file read, grep, arithmetic) skip memory calls.
+- Need past context (recent work, decisions, prior bugs)? Call agentmemory_search or agentmemory_recall BEFORE exploring files.
+- Trivial tasks (single-file read, grep, arithmetic) skip agentmemory calls.
 
 ## Write
-- After architectural or non-obvious technical decisions, call memory_save with the decision and concepts.
-- Discovered an effective or ineffective approach? Call memory_lesson_save with what worked / what to avoid.
-- New module, build pipeline, or project structure? Save it to project context (memory_update with concepts: project_context).
+- After architectural or non-obvious technical decisions, call agentmemory_save (memory_save on the agentmemory server) with the decision and concepts.
+- Discovered an effective or ineffective approach? Call agentmemory_lesson_save with what worked / what to avoid.
+- New module, build pipeline, or project structure? Update the project_context slot.
 - Unfinished work or follow-up promised? Record it in pending items before the session ends.
-- Never claim "memory updated" without an actual memory_* tool call in this turn.
+- Never claim "memory updated" without an actual agentmemory tool call in this turn. jcode built-in memory calls do not count.
 
 ## Crystal
-- Three or more completed actions in this session? Recall first to check for an existing crystal, then crystallize with the done action IDs.
+- Three or more completed agentmemory actions in this session? Recall first to check for an existing crystal, then crystallize with the done action IDs.
 - Pure exploration with zero file changes → skip crystallize.
 POLICY
     echo "  + overlay → ${OVERLAY_FILE}"
@@ -187,7 +190,27 @@ CFG
     echo "  = config exists, keeping"
   fi
 
-  # 5. Verify: run session_start once against the live server.
+  # 5. Register the agentmemory MCP server (jcode reads ~/.jcode/mcp.json).
+  if [ ! -f "${JCODE_DIR}/mcp.json" ]; then
+    cat > "${JCODE_DIR}/mcp.json" <<'MCPCFG'
+{
+  "mcpServers": {
+    "agentmemory": {
+      "command": "npx",
+      "args": ["-y", "@agentmemory/mcp"],
+      "timeout_secs": 60
+    }
+  }
+}
+MCPCFG
+    echo "  + mcp.json → ${JCODE_DIR}/mcp.json"
+  elif grep -q '"agentmemory"' "${JCODE_DIR}/mcp.json" 2>/dev/null; then
+    echo "  = agentmemory MCP already registered"
+  else
+    echo "  ! ${JCODE_DIR}/mcp.json exists without agentmemory — add it manually"
+  fi
+
+  # 6. Verify: run session_start once against the live server.
   echo "Verifying (session_start against agentmemory)..."
   if OH_AM_DEBUG=1 \
      JCODE_HOOK_EVENT=session_start \
