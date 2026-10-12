@@ -46,51 +46,54 @@ toml_has_line() { grep -qF "$1" "$CONFIG_TOML" 2>/dev/null; }
 #   key = "scalar"        -> key = ["scalar-as-is", "value"] (promote to array)
 ensure_array_entry() {
   local section="$1" key="$2" value="$3"
-  local tmp="${CONFIG_TOML}.tmp"
+  local rc=0
+  python3 - "$CONFIG_TOML" "$section" "$key" "$value" <<'PY' || rc=$?
+import os, re, sys
+path, section, key, value = sys.argv[1:5]
+src = open(path).read() if os.path.exists(path) else ""
 
-  # Already registered under this section?
-  if awk -v sec="^[${section}]" -v key="^${key} =" '
-    $0 ~ sec { insec=1; next } /^\[/ { insec=0 }
-    insec && $0 ~ key { found=1; print; next }
-    { print }
-  ' "$CONFIG_TOML" | grep -qF "${value}"; then
-    echo "  = ${key} already registered, skipping"
-    return
-  fi
+# Find the target section body. Use the LAST matching section: when a config
+# legitimately contains duplicate headers, the later one wins at parse time.
+sec_re = re.compile(rf"(?m)^\[{re.escape(section)}\]\s*\n")
+sections = list(sec_re.finditer(src))
+m = sections[-1] if sections else None
+nxt = re.search(r"(?m)^\[", src[m.end():]) if m else None
+body_start = m.end() if m else len(src)
+body_end = body_start + nxt.start() if nxt else len(src)
+body = src[body_start:body_end]
 
-  if ! grep -q "^\[${section}\]" "$CONFIG_TOML" 2>/dev/null; then
-    { echo ""; echo "[${section}]"; echo "${key} = [\"${value}\"]"; } >> "$CONFIG_TOML"
-    echo "  + ${key}"
-    return
-  fi
-
-  python3 - "$CONFIG_TOML" "$section" "$key" "$value" <<'PY'
-import re, sys
-path, section, key, value = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-src = open(path).read()
-sec_re = re.compile(rf"(?m)^\[{re.escape(section)}\]\s*$")
-m = sec_re.search(src)
-assert m, f"[{section}] header vanished"
-# Bounds of the section body.
-nxt = re.search(r"(?m)^\[", src[m.end():])
-end = m.end() + nxt.start() if nxt else len(src)
-body = src[m.end():end]
-key_re = re.compile(rf"(?m)^{re.escape(key)}\s*=\s*(.+)$")
+key_re = re.compile(rf"(?m)^{re.escape(key)}\s*=\s*(.+?)\s*$")
 km = key_re.search(body)
-if not km:
-    newline = f"{key} = [\"{value}\"]\n"
-    body = newline + body
-else:
-    cur = km.group(1).strip()
+
+def parse_values(cur):
+    cur = cur.strip()
     if cur.startswith("["):
-        inner = cur[1:cur.rindex("]")].rstrip().rstrip(",")
-        new = f'{key} = [{inner}, "{value}"]'
-    else:
-        new = f'{key} = [{cur}, "{value}"]'
-    body = body[:km.start()] + new + "\n" + body[km.end():]
-open(path, "w").write(src[:m.end()] + body + src[end:])
+        inner = cur[1 : cur.rindex("]")]
+        return [v.strip().strip('"') for v in inner.split(",") if v.strip()]
+    return [cur.strip('"')]
+
+if km:
+    values = parse_values(km.group(1))
+    if value in values:
+        sys.exit(1)  # already registered, nothing to do
+    values.append(value)
+    rendered = ", ".join(f'"{v}"' for v in values)
+    new_line = f"{key} = [{rendered}]"
+    body = body[:km.start()] + new_line + "\n" + body[km.end():]
+else:
+    body = f'{key} = ["{value}"]\n' + body
+
+if m is None:
+    src = src + f"\n[{section}]\n" + body
+else:
+    src = src[:body_start] + body + src[body_end:]
+open(path, "w").write(src)
 PY
-  echo "  + ${key}"
+  if [ $rc -eq 0 ]; then
+    echo "  + ${key}"
+  else
+    echo "  = ${key} already registered, skipping"
+  fi
 }
 
 ensure_hook_entry() {
