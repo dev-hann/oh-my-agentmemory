@@ -27,9 +27,35 @@ CONFIG_TOML="${JCODE_DIR}/config.toml"
 OH_AM_CONFIG="${JCODE_DIR}/oh-am.jsonc"
 OVERLAY_FILE="${OVERLAY_DIR}/oh-am.md"
 
+# Resolve the package root: prefer the globally installed npm package,
+# fall back to this repo (development mode).
+resolve_pkg_root() {
+  local npm_global
+  npm_global="$(npm root -g 2>/dev/null || true)"
+  if [ -n "$npm_global" ] && [ -d "${npm_global}/oh-my-agentmemory/src/adapters/jcode" ]; then
+    echo "${npm_global}/oh-my-agentmemory"
+    return 0
+  fi
+  # bun global too, since bun is a hard dependency anyway
+  local bun_global="${HOME}/.bun/install/global/node_modules/oh-my-agentmemory"
+  if [ -d "${bun_global}/src/adapters/jcode" ]; then
+    echo "$bun_global"
+    return 0
+  fi
+  return 1
+}
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENTRY_SRC="${REPO_ROOT}/src/adapters/jcode/jcode-entry.ts"
-FEEDBACK_SRC="${REPO_ROOT}/src/adapters/jcode/oh-am-feedback.ts"
+
+if PKG_ROOT="$(resolve_pkg_root)"; then
+  SRC_ROOT="${PKG_ROOT}/src"
+  echo "Source: npm-installed oh-my-agentmemory (${PKG_ROOT})"
+else
+  SRC_ROOT="${REPO_ROOT}/src"
+  echo "Source: this repo (npm package not found globally — run: npm i -g oh-my-agentmemory)"
+fi
+ENTRY_SRC="${SRC_ROOT}/adapters/jcode/jcode-entry.ts"
+FEEDBACK_SRC="${SRC_ROOT}/adapters/jcode/oh-am-feedback.ts"
 
 MARKER="# oh-am (managed by scripts/install-jcode.sh)"
 
@@ -140,17 +166,17 @@ install_all() {
            "$PLUGIN_DIR/src/adapters/opencode/hooks" \
            "$PLUGIN_DIR/src/core"
   cp "$ENTRY_SRC" "$FEEDBACK_SRC" "$PLUGIN_DIR/src/adapters/jcode/"
-  cp "${REPO_ROOT}/src/adapters/jcode/config.ts" "$PLUGIN_DIR/src/adapters/jcode/"
-  cp "${REPO_ROOT}/src/adapters/opencode/config.ts" \
-     "${REPO_ROOT}/src/adapters/opencode/client.ts" \
-     "${REPO_ROOT}/src/adapters/opencode/mode.ts" \
-     "${REPO_ROOT}/src/adapters/opencode/compaction-runner.ts" \
-     "${REPO_ROOT}/src/adapters/opencode/compaction-deleter.ts" \
+  cp "${SRC_ROOT}/adapters/jcode/config.ts" "$PLUGIN_DIR/src/adapters/jcode/"
+  cp "${SRC_ROOT}/adapters/opencode/config.ts" \
+     "${SRC_ROOT}/adapters/opencode/client.ts" \
+     "${SRC_ROOT}/adapters/opencode/mode.ts" \
+     "${SRC_ROOT}/adapters/opencode/compaction-runner.ts" \
+     "${SRC_ROOT}/adapters/opencode/compaction-deleter.ts" \
      "$PLUGIN_DIR/src/adapters/opencode/" 2>/dev/null || true
-  cp -r "${REPO_ROOT}/src/adapters/opencode/hooks/." "$PLUGIN_DIR/src/adapters/opencode/hooks/"
-  cp -r "${REPO_ROOT}/src/core/." "$PLUGIN_DIR/src/core/"
+  cp -r "${SRC_ROOT}/adapters/opencode/hooks/." "$PLUGIN_DIR/src/adapters/opencode/hooks/"
+  cp -r "${SRC_ROOT}/core/." "$PLUGIN_DIR/src/core/"
   mkdir -p "$PLUGIN_DIR/src/data"
-  cp -r "${REPO_ROOT}/src/data/." "$PLUGIN_DIR/src/data/"
+  cp -r "${SRC_ROOT}/data/." "$PLUGIN_DIR/src/data/"
 
   echo "  + scripts → ${PLUGIN_DIR}"
 

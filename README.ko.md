@@ -232,9 +232,12 @@ ln -sfn ~/Documents/oh-my-agentmemory/src/adapters/opencode \
 ### 설치
 
 ```bash
+npm i -g oh-my-agentmemory          # 또는: bun i -g oh-my-agentmemory
 scripts/install-jcode.sh            # 설치 / 업데이트 (멱등)
 scripts/install-jcode.sh --remove   # 제거
 ```
+
+설치 스크립트는 전역 설치된 npm 패키지를 우선 사용하고, 없으면 레포 로컬 소스로 폴백합니다 (개발 모드).
 
 설치 스크립트는 기존 `[hooks]` / `[prompt]` 설정을 **덮어쓰지 않고 배열에 병합**합니다. 다른 도구의 scalar 값은 값 보존하며 배열로 승격됩니다.
 

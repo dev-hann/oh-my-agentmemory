@@ -242,9 +242,12 @@ The same write-side enforcement runs on [jcode](https://github.com/1jehuang/jcod
 ### Install
 
 ```bash
+npm i -g oh-my-agentmemory          # or: bun i -g oh-my-agentmemory
 scripts/install-jcode.sh            # install / update (idempotent)
 scripts/install-jcode.sh --remove   # uninstall
 ```
+
+The installer prefers the globally installed npm package; run it from a repo clone and it falls back to the local sources (development mode).
 
 The installer registers entries as **array values**, so it merges into your existing `[hooks]` / `[prompt]` config instead of overwriting it. Scalar keys from other tools are promoted to arrays with their value preserved.
 
