@@ -670,6 +670,32 @@ Adapter tests require a running agentmemory server.
 
 Contributions welcome. Open an issue first to discuss scope.
 
+## Releasing
+
+npm publishing happens **only** via GitHub Actions (`.github/workflows/publish.yml`)
+— never `npm publish` from a laptop. It uses OIDC trusted publishing, so no
+npm token is involved anywhere.
+
+The workflow triggers on **tag push only** (`v*`). Pushing to `main` does
+nothing by itself — CI runs tests, but no release.
+
+```bash
+# 1. bump "version" in package.json
+# 2. add the release section to CHANGELOG.md
+# 3. commit both to main and push
+git checkout main
+git add package.json CHANGELOG.md
+git commit -m "chore(release): vX.Y.Z"
+git push origin main
+
+# 4. tag and push the tag — this triggers the Publish workflow
+git tag vX.Y.Z main
+git push origin vX.Y.Z
+```
+
+Verify: the **Publish** workflow succeeds under Actions, then
+`npm view oh-my-agentmemory version` shows the new version.
+
 ---
 
 ## Uninstall

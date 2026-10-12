@@ -642,6 +642,32 @@ bun run typecheck    # strict TS
 
 기여 환영. 범위 논의를 위해 먼저 이슈를 여세요.
 
+## 릴리즈
+
+npm 배포는 **오직 GitHub Actions**(`.github/workflows/publish.yml`)로만
+이루어진다 — 로컬에서 `npm publish` 금지. OIDC 트러스티드 퍼블리싱이라
+npm 토큰은 어디에도 필요 없다.
+
+워크플로 트리거는 **태그 푸시뿐**(`v*`). `main`에 푸시하는 것만으로는
+아무 일도 일어나지 않는다 — CI(테스트)만 돌 뿐 배포는 없다.
+
+```bash
+# 1. package.json의 "version"을 올린다
+# 2. CHANGELOG.md에 릴리스 섹션을 추가한다
+# 3. 둘 다 main에 커밋하고 푸시
+git checkout main
+git add package.json CHANGELOG.md
+git commit -m "chore(release): vX.Y.Z"
+git push origin main
+
+# 4. 태그 생성 및 푸시 — 이게 Publish 워크플로를 트리거한다
+git tag vX.Y.Z main
+git push origin vX.Y.Z
+```
+
+검증: Actions에서 **Publish** 워크플로가 성공했는지 확인 후
+`npm view oh-my-agentmemory version`으로 새 버전 확인.
+
 ---
 
 ## 제거

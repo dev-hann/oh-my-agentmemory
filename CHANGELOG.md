@@ -4,7 +4,23 @@ All notable changes to oh-my-agentmemory are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-10-12
+
+### Changed — OpenCode V2 plugin API (breaking)
+- The OpenCode adapter now targets the OpenCode 2.x plugin API; OpenCode
+  1.x hosts are no longer supported (1.x rejects nothing but loads the
+  old hook-map contract, which no longer exists here)
+- Plugin default-exports `{ id, setup }` instead of a V1 hook function;
+  hooks are registered through the V2 domain APIs
+  (`ctx.session.hook`, `ctx.tool.hook`, `ctx.event.subscribe`)
+- `session.status(idle)` → `session.execution.{succeeded,failed,interrupted}`;
+  the `todo.updated` event bridge moved to `tool.execute.after` (V2 emits
+  no todo event); `file.edited` backup path dropped (tool hook is primary)
+- Directives are pushed as `{ type: "text" }` system parts; the session-GC
+  toast is gone (no V2 TUI API)
+- Local installs resolve through the adapter directory's `index.ts`
+  (V2 ignores `package.json main` for directory plugin entries)
+- `@opencode-ai/plugin` devDependency replaced with `@opencode/plugin@2`
 
 ### Added — jcode adapter
 - Lifecycle-hook adapter (`src/adapters/jcode/`): the six write-side
