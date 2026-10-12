@@ -229,6 +229,27 @@ npm package name in `opencode.json`.
 
 ---
 
+## jcode support
+
+The same write-side enforcement runs on [jcode](https://github.com/1jehuang/jcode) via its lifecycle hooks — no opencode required.
+
+```bash
+scripts/install-jcode.sh            # install / update
+scripts/install-jcode.sh --remove   # uninstall
+```
+
+What it installs:
+
+- Hook entry + feedback scripts in `~/.jcode/plugins/oh-am/`
+- Lifecycle hooks in `~/.jcode/config.toml` (`[hooks]` array values): `session_start` → init, `post_tool` → learning + bridge, `turn_end` → archive, `session_end` → cleanup, `post_tool_feedback` → throttled reminder
+- The policy overlay at `~/.jcode/overlays/oh-am.md`, registered under `[prompt] overlay_files` (requires jcode with [configurable overlay files](https://github.com/1jehuang/jcode/pull/1802))
+- The agentmemory MCP server in `~/.jcode/mcp.json` (same `npx @agentmemory/mcp` command as the opencode config)
+- `~/.jcode/oh-am.jsonc` with defaults if absent (falls back to the opencode config when missing)
+
+Phase coverage differs slightly from opencode: `intent` (user-prompt keyword detection) is delegated to the overlay policy — jcode has no per-message hook — and `enforcement` is handled by the overlay plus a throttled `post_tool_feedback` reminder rather than a per-turn system-prompt transform. The installer is idempotent; re-running updates the scripts without duplicating config entries.
+
+---
+
 ## Slash commands
 
 | Command | Action |
