@@ -1,9 +1,10 @@
 /**
- * archive — auto-crystallize on session.idle.
+ * archive — auto-crystallize on session turn end.
  *
- * When session goes idle, run crystallize directly (the LLM is no longer
- * the writer for this). Records the outcome as an observation so the
- * archive phase stays debuggable.
+ * When the session's execution ends (session.execution.succeeded / failed /
+ * interrupted — the V2 equivalent of session.idle), run crystallize directly
+ * (the LLM is no longer the writer for this). Records the outcome as an
+ * observation so the archive phase stays debuggable.
  *
  * Threshold (tightened from 3 to 5 + priority gate):
  *   - ≥5 done actions AND
@@ -30,26 +31,20 @@ const MIN_HIGH_PRIORITY_ACTIONS = 1;
 const HIGH_PRIORITY_THRESHOLD = 7;
 const MAX_ACTIONS_PER_CRYSTAL = 12;
 
-interface SessionStatusProperties {
-  sessionID?: string;
-  sessionId?: string;
-  status?: { type?: string; attempt?: number; message?: string };
+interface SessionEndInput {
+  sessionID: string;
   project?: string | null;
 }
 
-export async function onSessionStatus(
-  properties: SessionStatusProperties,
-): Promise<void> {
-  const status = properties.status;
-  if (!status || status.type !== "idle") return;
-
-  const sessionId = properties.sessionID ?? properties.sessionId ?? null;
+export async function onSessionEnd(input: SessionEndInput): Promise<void> {
+  const sessionId = input.sessionID;
   if (!sessionId) return;
+  const project = input.project ?? null;
 
   // Compaction runs independent of the archive phase gates below — it is
   // read-only and self-gating (config compaction.enabled), and its failure
   // must never affect the archive flow.
-  await runSessionCompaction(sessionId, properties.project ?? null);
+  await runSessionCompaction(sessionId, project);
 
   if (isPhaseDisabled("archive")) return;
   // In mcp-only mode, no capture plugin writes actions — skip the probe.
@@ -67,8 +62,6 @@ export async function onSessionStatus(
       console.error("[oh-am] actions list failed:", (e as Error).message);
     return;
   }
-
-  const project = properties.project ?? null;
 
   // Threshold 1: total done count
   if (doneActions.length < MIN_DONE_FOR_CRYSTAL) {

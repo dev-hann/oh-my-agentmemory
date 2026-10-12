@@ -30,7 +30,7 @@ import { onSessionCreated } from "../opencode/hooks/session-created.js";
 import { onFileEdited } from "../opencode/hooks/file-edited.js";
 import { onTodowrite, dropSessionState } from "../opencode/hooks/todowrite.js";
 import type { TodoEntry } from "../../core/types.js";
-import { onSessionStatus } from "../opencode/hooks/session-idle.js";
+import { onSessionEnd } from "../opencode/hooks/session-idle.js";
 
 const DEBUG = process.env.OH_AM_DEBUG === "1";
 
@@ -195,9 +195,8 @@ async function main(): Promise<void> {
       break;
     case "turn_end":
       // Session-idle equivalent: crystallize check after each completed turn.
-      await onSessionStatus({
+      await onSessionEnd({
         sessionID: sessionId,
-        status: { type: "idle" },
         project: cwd,
       });
       break;

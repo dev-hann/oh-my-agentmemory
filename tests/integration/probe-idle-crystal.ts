@@ -4,7 +4,7 @@
  * Strategy:
  *   1. Create 5 high-priority actions directly via createAction
  *   2. Mark all 5 as done via updateAction
- *   3. Synthetically invoke onSessionStatus({status: {type: 'idle'}})
+ *   3. Synthetically invoke onSessionEnd({sessionID, project})
  *   4. Verify oh_am_crystal_created observation was recorded
  *
  * This bypasses the opencode event bus (which we can't emit into from
@@ -19,7 +19,7 @@ import {
   listActions,
   updateAction,
 } from "../../src/adapters/opencode/client.js";
-import { onSessionStatus } from "../../src/adapters/opencode/hooks/session-idle.js";
+import { onSessionEnd } from "../../src/adapters/opencode/hooks/session-idle.js";
 import { _setModeForTests } from "../../src/adapters/opencode/mode.js";
 
 const PROBE_SESSION = "ses_probe_idle_e2e";
@@ -76,14 +76,13 @@ async function main() {
   const probeDone = done.filter((a) => (a.tags ?? []).includes("probe-idle"));
   console.log(`  ✓ listActions confirms ${probeDone.length} probe-idle done actions`);
 
-  // Step 3: Synthetic session.idle
-  console.log("\n▶ invoking onSessionStatus({status: {type: 'idle'}})...");
-  await onSessionStatus({
+  // Step 3: Synthetic session turn end (session.execution.*)
+  console.log("\n▶ invoking onSessionEnd({...})...");
+  await onSessionEnd({
     sessionID: PROBE_SESSION,
-    status: { type: "idle" },
     project: PROBE_PROJECT,
   });
-  console.log("  ✓ onSessionStatus returned");
+  console.log("  ✓ onSessionEnd returned");
 
   // Step 4: Verify observation was recorded
   // We can't query observations directly via REST, so we check audit log.

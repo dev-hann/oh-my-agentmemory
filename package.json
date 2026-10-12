@@ -28,7 +28,7 @@
     "prepublishOnly": "bun run typecheck && bun run test"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "latest",
+    "@opencode/plugin": "2.0.27",
     "@types/node": "^26.1.2",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"

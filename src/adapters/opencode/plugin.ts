@@ -1,15 +1,15 @@
 /**
- * oh-my-agentmemory — opencode plugin entry.
+ * oh-my-agentmemory — OpenCode V2 plugin entry.
  *
- * Registers six hooks alongside the existing agentmemory-capture.ts plugin
+ * Registers hooks alongside the existing agentmemory-capture.ts plugin
  * (which keeps doing passive observation). This plugin owns the WRITE side:
  *
- *   enforcement — experimental.chat.system.transform → per-turn directive push
- *   init        — event: session.created             → bootstrap empty slots
- *   intent      — chat.message                       → keyword detection
- *   archive     — event: session.status(idle)        → auto-crystallize
- *   learning    — event: file.edited                 → auto lesson capture
- *   bridge      — tool.execute.after(todowrite)      → sync todos to actions
+ *   enforcement — ctx.session.hook("context")    → per-turn directive push
+ *   init        — event: session.created         → bootstrap empty slots
+ *   intent      — ctx.session.hook("prompt")     → keyword detection
+ *   archive     — event: session.execution.*     → auto-crystallize
+ *   learning    — ctx.tool.hook("execute.after") → auto lesson capture (edit/write)
+ *   bridge      — ctx.tool.hook("execute.after") → sync todos to actions (todo tool)
  *
  * Plus a boot-time stale session GC (agentmemory-side only): ends sessions
  * untouched for sessionGc.maxAgeDays and reactivates them if a prompt later
@@ -18,95 +18,102 @@
  * Hooks are independently disable-able via OH_AM_DISABLE=intent,learning,bridge etc.
  */
 
-import type { Plugin } from "@opencode-ai/plugin";
+import { Plugin } from "@opencode/plugin";
 import { loadConfig } from "./config.js";
 import { healthCheck } from "./client.js";
 import { resolveMode } from "./mode.js";
 import { onChatMessage } from "./hooks/chat-message.js";
 import { onFileEdited } from "./hooks/file-edited.js";
 import { onSessionCreated } from "./hooks/session-created.js";
-import { onSessionStatus } from "./hooks/session-idle.js";
-import { onTodowrite } from "./hooks/todowrite.js";
-import { dropSessionState } from "./hooks/todowrite.js";
+import { onSessionEnd } from "./hooks/session-idle.js";
+import { onTodowrite, dropSessionState } from "./hooks/todowrite.js";
 import { reactivateIfEnded, sweepStaleSessions } from "./hooks/session-gc.js";
 import { systemTransformHook } from "./hooks/system-transform.js";
 import type { TodoEntry } from "../../core/types.js";
 
-export const OhMyAgentmemoryPlugin: Plugin = async (ctx) => {
-  const cfg = loadConfig();
+/**
+ * Narrow structural type for OpenCode V2 public stream events this plugin
+ * reads. The SDK's V2EventEncoded is opaque at the type level; at runtime
+ * every event carries `type` plus a `data` payload whose session-bearing
+ * field is `sessionID`.
+ */
+interface OpencodeEvent {
+  type?: string;
+  data?: { sessionID?: string };
+}
 
-  if (cfg.debug) {
-    console.error(`[oh-am] plugin loaded (mode=${cfg.mode}, url=${cfg.url})`);
-  }
+export default {
+  id: "oh-my-agentmemory",
+  async setup(ctx) {
+    const cfg = loadConfig();
 
-  // Health check — non-fatal unless healthCheckFatal is set.
-  if (cfg.healthCheckOnBoot) {
-    const ok = await healthCheck(cfg.healthCheckTimeoutMs);
-    if (!ok) {
-      console.error(
-        `[oh-am] health check failed — agentmemory server not reachable at ${cfg.url}`,
-      );
-      if (cfg.healthCheckFatal) {
-        console.error("[oh-am] healthCheckFatal=true, plugin self-disabling");
-        return {};
-      }
-    } else if (cfg.debug) {
-      console.error("[oh-am] health check ok");
+    if (cfg.debug) {
+      console.error(`[oh-am] plugin loaded (mode=${cfg.mode}, url=${cfg.url})`);
     }
-  }
 
-  // Resolve operating mode. async, fire-and-forget — first turn may run
-  // before this resolves (treated as "full" by default, switches to mcp-only
-  // once probe completes).
-  void resolveMode(cfg).catch((e) => {
-    if (cfg.debug) console.error("[oh-am] mode resolve failed:", (e as Error).message);
-  });
+    // Health check — non-fatal unless healthCheckFatal is set.
+    if (cfg.healthCheckOnBoot) {
+      const ok = await healthCheck(cfg.healthCheckTimeoutMs);
+      if (!ok) {
+        console.error(
+          `[oh-am] health check failed — agentmemory server not reachable at ${cfg.url}`,
+        );
+        if (cfg.healthCheckFatal) {
+          console.error("[oh-am] healthCheckFatal=true, plugin self-disabling");
+          return;
+        }
+      } else if (cfg.debug) {
+        console.error("[oh-am] health check ok");
+      }
+    }
 
-  // Stale session GC — one-shot sweep on boot. Ends agentmemory sessions
-  // untouched for maxAgeDays (agentmemory-side only; opencode chat sessions
-  // are never modified). Shows a TUI toast with the ended count when >0.
-  if (cfg.sessionGc.enabled) {
-    void sweepStaleSessions(cfg, ctx.client).catch((e) => {
-      console.error("[oh-am] session gc failed:", (e as Error).message);
+    // Resolve operating mode. async, fire-and-forget — first turn may run
+    // before this resolves (treated as "full" by default, switches to mcp-only
+    // once probe completes).
+    void resolveMode(cfg).catch((e) => {
+      if (cfg.debug) console.error("[oh-am] mode resolve failed:", (e as Error).message);
     });
-  }
 
-  const project =
-    (ctx as { worktree?: string; project?: { id?: string } }).worktree ??
-    ctx.project?.id ??
-    process.cwd() ??
-    null;
+    // Stale session GC — one-shot sweep on boot. Ends agentmemory sessions
+    // untouched for maxAgeDays (agentmemory-side only; opencode chat sessions
+    // are never modified).
+    if (cfg.sessionGc.enabled) {
+      void sweepStaleSessions(cfg).catch((e) => {
+        console.error("[oh-am] session gc failed:", (e as Error).message);
+      });
+    }
 
-  return {
+    const project =
+      ctx.location.project?.id ?? ctx.location.directory ?? null;
+
     // ── enforcement: per-turn directive injection ─────────────────────────
-    "experimental.chat.system.transform": systemTransformHook,
+    await ctx.session.hook("context", async (event) => {
+      await systemTransformHook(event);
+    });
 
     // ── intent: keyword detection on user prompts ─────────────────────────
-    "chat.message": async (input, output) => {
-      // gc: a prompt landing on an ended session (user resumed an old
-      // conversation) reactivates its agentmemory record.
-      const promptSid = pickSessionId(
-        (input as { sessionID?: string }).sessionID,
-        (input as { sessionId?: string }).sessionId,
-      );
-      if (promptSid) reactivateIfEnded(promptSid, project);
-
-      await onChatMessage(
-        input as { sessionID?: string; sessionId?: string; project?: string | null },
-        output as { parts?: Array<{ type: string; text?: string }> },
-      );
-    },
+    // gc: a prompt landing on an ended session (user resumed an old
+    // conversation) reactivates its agentmemory record.
+    await ctx.session.hook("prompt", async (event) => {
+      reactivateIfEnded(event.sessionID, project);
+      await onChatMessage({
+        sessionId: event.sessionID,
+        project,
+        text: event.prompt.text,
+      });
+    });
 
     // ── learning: auto lesson capture on file edit ────────────────────────
-    // Primary path is tool.execute.after (fires reliably). The legacy
-    // event:file.edited handler below is kept as a backup in case opencode
-    // emits those events in some configurations.
-    "tool.execute.after": async (input) => {
-      const tool = ((input as { tool?: string }).tool ?? "").toLowerCase();
-      const sessionId = (input as { sessionID?: string }).sessionID;
-      if (!sessionId) return;
-      const args = (input as { args?: Record<string, unknown> }).args;
-      if (!args) return;
+    // ── bridge: todo tool → sync todos to actions ──────────────────────────
+    // V2 has no todo.updated event, so the todo bridge also lives on the
+    // tool hook now. onTodowrite dedupes by content, so repeated triggers
+    // within the same session are safe.
+    await ctx.tool.hook("execute.after", async (event) => {
+      if (event.status !== "completed") return;
+      const tool = (event.tool ?? "").toLowerCase();
+      const sessionId = event.sessionID;
+      const args = event.input as Record<string, unknown> | undefined;
+      if (!sessionId || !args) return;
 
       // — file edit/ write → lesson auto-capture —
       if (tool === "edit" || tool === "write") {
@@ -134,140 +141,62 @@ export const OhMyAgentmemoryPlugin: Plugin = async (ctx) => {
         return;
       }
 
-      // NOTE: todowrite is handled via the dedicated `todo.updated` event
-      // in the event handler below. Subscribing here too causes a race
-      // condition where both fire simultaneously and bypass the per-session
-      // dedup map, producing duplicate actions.
-    },
-
-    // ── init / archive / learning: session + file lifecycle events ────────
-    event: async ({ event }: { event?: OpencodeEvent } = {}) => {
-      if (!event) return;
-      const type = event.type;
-      const props = (event.properties ?? {}) as Record<string, unknown>;
-
-      if (type === "session.created") {
-        const p = props as unknown as SessionCreatedProperties;
-        const sessionId = pickSessionId(
-          p.info?.id,
-          p.sessionID,
-          (props as { sessionID?: string }).sessionID,
-        );
-        if (!sessionId) return;
-        await onSessionCreated({ sessionId, cwd: project, project });
-        return;
-      }
-
-      if (type === "session.status") {
-        const p = props as unknown as SessionStatusProperties;
-        await onSessionStatus({
-          sessionID: p.sessionID,
-          sessionId: p.sessionId,
-          status: p.status,
-          project,
-        });
-        // Free per-session bridge state when the session goes idle.
-        // Guards against unbounded sessionState growth in long-running
-        // opencode processes.
-        const statusType = p.status?.type;
-        const sid = p.sessionID ?? p.sessionId ?? null;
-        if ((statusType === "idle" || statusType === "completed") && sid) {
-          dropSessionState(sid);
-        }
-        return;
-      }
-
-      if (type === "file.edited") {
-        const p = props as unknown as FileEditedProperties;
-        const sessionId = pickSessionId(
-          p.sessionID,
-          p.sessionId,
-          (props as { sessionID?: string }).sessionID,
-        );
-        if (!sessionId) return;
-        const filePath = pickFilePath(p);
-        if (!filePath) return;
-
-        let additions = p.additions ?? 0;
-        let deletions = p.deletions ?? 0;
-        if (Array.isArray(p.diff)) {
-          for (const d of p.diff) {
-            additions += d.additions ?? 0;
-            deletions += d.deletions ?? 0;
-          }
-        }
-
-        await onFileEdited({
-          sessionId,
-          project,
-          filePath,
-          additions,
-          deletions,
-        });
-        return;
-      }
-
-      // ── bridge: todo.updated event (opencode-native todo signal) ────────
-      // Belt-and-suspenders alongside the tool.execute.after(todowrite)
-      // handler above. Whichever fires first wins; onTodowrite dedupes by
-      // content so duplicate triggers within the same session are safe.
-      if (type === "todo.updated") {
-        const p = props as unknown as TodoUpdatedProperties;
-        const sessionId = pickSessionId(
-          p.sessionID,
-          p.sessionId,
-          (props as { sessionID?: string }).sessionID,
-        );
-        if (!sessionId) return;
-        const todosRaw = (p.todos ?? p.list ?? []) as unknown;
+      // — todo tool → action bridge —
+      if (tool.includes("todo")) {
+        const todosRaw = args.todos;
         if (!Array.isArray(todosRaw)) return;
         const todos = parseTodos(todosRaw);
         if (todos.length === 0) return;
         await onTodowrite({ sessionId, project, todos });
-        return;
       }
-    },
-  };
-};
+    });
 
-export default OhMyAgentmemoryPlugin;
+    // ── init / archive: session lifecycle events ──────────────────────────
+    // session.created bootstraps slots; session.execution.* end-of-turn
+    // signals replace the V1 session.status(idle) archive trigger.
+    const controller = new AbortController();
+    void (async () => {
+      for await (const raw of ctx.event.subscribe({ signal: controller.signal })) {
+        const ev = raw as OpencodeEvent;
+        if (!ev?.type) continue;
 
-// ── Helper types + utilities for event parsing ──────────────────────────────
+        if (ev.type === "session.created") {
+          const sessionId = ev.data?.sessionID;
+          if (!sessionId) continue;
+          await onSessionCreated({ sessionId, cwd: project, project });
+          continue;
+        }
 
-interface OpencodeEvent {
-  type: string;
-  properties?: Record<string, unknown>;
-}
+        if (
+          ev.type === "session.execution.succeeded" ||
+          ev.type === "session.execution.failed" ||
+          ev.type === "session.execution.interrupted"
+        ) {
+          const sessionId = ev.data?.sessionID;
+          if (!sessionId) continue;
+          await onSessionEnd({ sessionID: sessionId, project });
+          // Free per-session bridge state when the turn ends. Guards against
+          // unbounded sessionState growth in long-running opencode processes.
+          dropSessionState(sessionId);
+        }
+      }
+    })().catch((e) => {
+      if (cfg.debug) console.error("[oh-am] event stream failed:", (e as Error).message);
+    });
 
-interface SessionCreatedProperties {
-  info?: { id?: string; title?: string };
-  sessionID?: string;
-}
+    return () => {
+      controller.abort();
+    };
+  },
+} satisfies Plugin.Plugin;
 
-interface TodoUpdatedProperties {
-  sessionID?: string;
-  sessionId?: string;
-  /** Optional list of todos carried by the event. */
-  todos?: unknown;
-  /** Alternative field name some opencode builds use. */
-  list?: unknown;
-}
+// ── Helper types + utilities for tool-input parsing ────────────────────────
 
 interface FileEditedProperties {
-  sessionID?: string;
-  sessionId?: string;
   file?: string;
   filePath?: string;
   path?: string;
-  additions?: number;
-  deletions?: number;
   diff?: Array<{ additions?: number; deletions?: number; file?: string }>;
-}
-
-interface SessionStatusProperties {
-  sessionID?: string;
-  sessionId?: string;
-  status?: { type?: string; attempt?: number; message?: string };
 }
 
 function pickFilePath(props: FileEditedProperties): string | null {
@@ -277,13 +206,6 @@ function pickFilePath(props: FileEditedProperties): string | null {
   if (Array.isArray(props.diff) && props.diff.length > 0) {
     const first = props.diff[0];
     if (first && typeof first.file === "string") return first.file;
-  }
-  return null;
-}
-
-function pickSessionId(...candidates: Array<unknown>): string | null {
-  for (const c of candidates) {
-    if (typeof c === "string" && c.length > 0) return c;
   }
   return null;
 }

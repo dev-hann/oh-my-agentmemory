@@ -2,13 +2,12 @@
  * enforcement — per-turn directive injection.
  *
  * Reads agentmemory state (slots, done actions) once per session, caches,
- * then on every system-transform call pushes a directive string built by
- * core/directives.ts into output.system.
+ * then on every context-model hook call pushes a directive string built by
+ * core/directives.ts into event.system as a text SystemPart.
  *
  * Cheap on the hot path: no HTTP after first turn per session.
  */
 
-import type { Plugin } from "@opencode-ai/plugin";
 import {
   buildDirective,
   directiveCacheKey,
@@ -22,6 +21,12 @@ import {
   emptySlotLabels,
 } from "../client.js";
 import { isMcpOnly, getConfig } from "./_shared.js";
+
+/** Narrow structural type for the OpenCode V2 session "context" hook event. */
+interface SystemTransformEvent {
+  readonly sessionID: string;
+  system: Array<{ type: string; text?: string }>;
+}
 
 const DEBUG = process.env.OH_AM_DEBUG === "1";
 
@@ -66,21 +71,18 @@ async function loadSessionContext(
   return value;
 }
 
-export const systemTransformHook: NonNullable<
-  Awaited<ReturnType<Plugin>>["experimental.chat.system.transform"]
-> = async (input, output) => {
-  const sessionId =
-    (input as { sessionID?: string })?.sessionID ??
-    (input as { sessionId?: string })?.sessionId ??
-    null;
+export const systemTransformHook = async (
+  event: SystemTransformEvent,
+): Promise<void> => {
+  const sessionId = event?.sessionID ?? null;
   if (!sessionId) return;
-  if (!output || !Array.isArray(output.system)) return;
+  if (!event || !Array.isArray(event.system)) return;
 
   const disabled = parseDisabledPhasesFromConfig();
   if (disabled.has("enforcement")) return;
 
   const state = await loadSessionContext(sessionId, null);
-  // Drain whatever the chat-message hook queued for this turn.
+  // Drain whatever the prompt hook queued for this turn.
   const pendingKeywords = drainSessionKeywords(sessionId);
   const mcpOnly = isMcpOnly();
   const ctx = buildCtx(state, pendingKeywords, disabled, mcpOnly);
@@ -88,7 +90,7 @@ export const systemTransformHook: NonNullable<
   const cacheKey = `${sessionId}::${directiveCacheKey(ctx)}`;
   const cached = sessionDirectiveCache.get(sessionId);
   if (cached && sessionDirectiveCache.has(cacheKey)) {
-    output.system.push(cached);
+    event.system.push({ type: "text", text: cached });
     return;
   }
 
@@ -97,7 +99,7 @@ export const systemTransformHook: NonNullable<
   });
   sessionDirectiveCache.set(sessionId, directive);
   sessionDirectiveCache.set(cacheKey, directive);
-  output.system.push(directive);
+  event.system.push({ type: "text", text: directive });
 };
 
 /** Called by session.created hook to drop caches when a new session starts. */
