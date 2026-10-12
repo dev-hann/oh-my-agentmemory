@@ -6,6 +6,23 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added — jcode adapter
+- Lifecycle-hook adapter (`src/adapters/jcode/`): the six write-side
+  phases (init, learning, bridge, archive, cleanup) run on jcode's
+  lifecycle hooks (`session_start`, `post_tool`, `turn_end`,
+  `session_end`) via one Bun entry script; `post_tool_feedback` adds a
+  throttled memory reminder (1 per 10 tool calls per session)
+- `scripts/install-jcode.sh`: installs scripts, registers hooks as
+  array values in `~/.jcode/config.toml` (merges into existing keys,
+  promotes scalars, idempotent), writes the policy overlay and
+  registers it under `[prompt] overlay_files`, registers the
+  agentmemory MCP server in `~/.jcode/mcp.json`, verifies with a live
+  `session_start` run; `--remove` uninstalls
+- Config loader prefers `~/.jcode/oh-am.jsonc` and falls back to the
+  opencode config
+- README (en/ko): jcode support sections with prerequisites,
+  verification, and troubleshooting
+
 ### Added — observation compaction
 - On `session.idle`, scores the session's observations with a local
   [jevos](https://github.com/feder-cr/jev) decision model (Jev-compatible
