@@ -18,7 +18,7 @@
  * Hooks are independently disable-able via OH_AM_DISABLE=intent,learning,bridge etc.
  */
 
-import { Plugin } from "@opencode/plugin";
+import type { Plugin } from "@opencode/plugin";
 import { loadConfig } from "./config.js";
 import { healthCheck } from "./client.js";
 import { resolveMode } from "./mode.js";
