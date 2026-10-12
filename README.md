@@ -229,6 +229,27 @@ npm package name in `opencode.json`.
 
 ---
 
+## jcode support
+
+The same write-side enforcement runs on [jcode](https://github.com/1jehuang/jcode) via its lifecycle hooks — no opencode required.
+
+```bash
+scripts/install-jcode.sh            # install / update
+scripts/install-jcode.sh --remove   # uninstall
+```
+
+What it installs:
+
+- Hook entry + feedback scripts in `~/.jcode/plugins/oh-am/`
+- Lifecycle hooks in `~/.jcode/config.toml` (`[hooks]` array values): `session_start` → init, `post_tool` → learning + bridge, `turn_end` → archive, `session_end` → cleanup, `post_tool_feedback` → throttled reminder
+- The policy overlay at `~/.jcode/overlays/oh-am.md`, registered under `[prompt] overlay_files` (requires jcode with [configurable overlay files](https://github.com/1jehuang/jcode/pull/1802))
+- The agentmemory MCP server in `~/.jcode/mcp.json` (same `npx @agentmemory/mcp` command as the opencode config)
+- `~/.jcode/oh-am.jsonc` with defaults if absent (falls back to the opencode config when missing)
+
+Phase coverage differs slightly from opencode: `intent` (user-prompt keyword detection) is delegated to the overlay policy — jcode has no per-message hook — and `enforcement` is handled by the overlay plus a throttled `post_tool_feedback` reminder rather than a per-turn system-prompt transform. The installer is idempotent; re-running updates the scripts without duplicating config entries.
+
+---
+
 ## Slash commands
 
 | Command | Action |
@@ -604,6 +625,32 @@ Adapter tests require a running agentmemory server.
 - **Codex adapter** — `adapters/codex/` (Codex hook format)
 
 Contributions welcome. Open an issue first to discuss scope.
+
+## Releasing
+
+npm publishing happens **only** via GitHub Actions (`.github/workflows/publish.yml`)
+— never `npm publish` from a laptop. It uses OIDC trusted publishing, so no
+npm token is involved anywhere.
+
+The workflow triggers on **tag push only** (`v*`). Pushing to `main` does
+nothing by itself — CI runs tests, but no release.
+
+```bash
+# 1. bump "version" in package.json
+# 2. add the release section to CHANGELOG.md
+# 3. commit both to main and push
+git checkout main
+git add package.json CHANGELOG.md
+git commit -m "chore(release): vX.Y.Z"
+git push origin main
+
+# 4. tag and push the tag — this triggers the Publish workflow
+git tag vX.Y.Z main
+git push origin vX.Y.Z
+```
+
+Verify: the **Publish** workflow succeeds under Actions, then
+`npm view oh-my-agentmemory version` shows the new version.
 
 ---
 
