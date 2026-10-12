@@ -219,6 +219,67 @@ ln -sfn ~/Documents/oh-my-agentmemory/src/adapters/opencode \
 
 ---
 
+## jcode 지원
+
+동일한 쓰기 측 강제 기능이 [jcode](https://github.com/1jehuang/jcode)의 라이프사이클 훅으로 동작합니다 — opencode 불필요.
+
+### 사전 요구사항
+
+- [설정 가능한 오버레이 파일](https://github.com/1jehuang/jcode/pull/1802)이 병합된 [jcode](https://github.com/1jehuang/jcode) (v0.96+, `jcode version`으로 확인)
+- [Bun](https://bun.sh)
+- 실행 중인 agentmemory 서버 (기본 `http://localhost:3111`)
+
+### 설치
+
+```bash
+scripts/install-jcode.sh            # 설치 / 업데이트 (멱등)
+scripts/install-jcode.sh --remove   # 제거
+```
+
+설치 스크립트는 기존 `[hooks]` / `[prompt]` 설정을 **덮어쓰지 않고 배열에 병합**합니다. 다른 도구의 scalar 값은 값 보존하며 배열로 승격됩니다.
+
+설치되는 것:
+
+- `~/.jcode/plugins/oh-am/`의 훅 entry + feedback 스크립트
+- `~/.jcode/config.toml` 라이프사이클 훅 (`[hooks]` 배열 값): `session_start` → init, `post_tool` → learning + bridge, `turn_end` → archive, `session_end` → cleanup, `post_tool_feedback` → 스로틀 리마인더
+- `~/.jcode/overlays/oh-am.md` 정책 오버레이, `[prompt] overlay_files`에 등록
+- `~/.jcode/mcp.json`의 agentmemory MCP 서버 (opencode 설정과 동일한 `npx @agentmemory/mcp`)
+- 없으면 기본값의 `~/.jcode/oh-am.jsonc` (없을 시 opencode 설정으로 폴백)
+
+### 확인
+
+원샷 세션을 실행하고 agentmemory( jcode 내장 메모리가 아님)에 기록되는지 확인:
+
+```bash
+jcode run "테스트: 'oh-am-verify-marker' 결정을 agentmemory에 저장해줘."
+curl -s localhost:3111/agentmemory/search -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"oh-am-verify-marker"}' | grep oh-am-verify-marker
+```
+
+훅을 직접 실행해 볼 수도 있습니다:
+
+```bash
+OH_AM_DEBUG=1 \
+JCODE_HOOK_EVENT=session_start \
+JCODE_HOOK_SESSION_ID=manual-check \
+JCODE_HOOK_CWD="$PWD" \
+bun ~/.jcode/plugins/oh-am/src/adapters/jcode/jcode-entry.ts
+```
+
+### 문제 해결
+
+- **훅이 안 돌아가나요?** `~/.jcode/config.toml` `[hooks]`에 oh-am 5개 항목이 있는지 확인 후, 위 수동 명령으로 stderr를 확인하세요.
+- **잘못된 메모리에 저장되나요?** 오버레이 정책이 agentmemory MCP 서버를 명시합니다. `~/.jcode/mcp.json`에 등록돼 있는지, 서버가 응답하는지 확인하세요 (`curl localhost:3111/agentmemory/health`).
+- **서버가 죽어있나요?** 훅은 fail-open 설계라 세션을 절대 느리게 하거나 망가뜨리지 않습니다. `OH_AM_DEBUG=1`로 스킵 로그를 볼 수 있습니다.
+- **기존 훅이 덮어써졌나요?** 덮어쓰지 않습니다 — 배열에 병합됩니다. 한 파일에 `[hooks]` 섹션이 중복되어 있으면 마지막 섹션에 병합됨에 유의하세요.
+
+### opencode 어댑터와의 차이
+
+`intent` (사용자 프롬프트 키워드 감지)는 jcode에 메시지별 훅이 없어 오버레이 정책에 위임되고, `enforcement`는 매 턴 system-prompt transform 대신 오버레이 + 스로틀된 `post_tool_feedback` 리마인더로 처리됩니다.
+
+---
+
 ## 슬래시 명령
 
 | 명령 | 동작 |
