@@ -39,46 +39,67 @@ toml_has_line() { grep -qF "$1" "$CONFIG_TOML" 2>/dev/null; }
 
 # Append `key = [value]` under [hooks], creating the section if needed.
 # Skips when the exact line already exists (idempotency).
-ensure_hook_entry() {
-  local key="$1" value="$2" line
-  line="${key} = [\"${value}\"]"
-  if toml_has_line "$line"; then
+# Append a value to `key` under [section], preserving what is already there.
+#   key absent            -> key = ["value"]
+#   key = ["existing"]    -> key = ["existing", "value"]
+#   key = ["ours"]        -> skip (already registered)
+#   key = "scalar"        -> key = ["scalar-as-is", "value"] (promote to array)
+ensure_array_entry() {
+  local section="$1" key="$2" value="$3"
+  local tmp="${CONFIG_TOML}.tmp"
+
+  # Already registered under this section?
+  if awk -v sec="^[${section}]" -v key="^${key} =" '
+    $0 ~ sec { insec=1; next } /^\[/ { insec=0 }
+    insec && $0 ~ key { found=1; print; next }
+    { print }
+  ' "$CONFIG_TOML" | grep -qF "${value}"; then
     echo "  = ${key} already registered, skipping"
     return
   fi
-  if grep -q '^\[hooks\]' "$CONFIG_TOML" 2>/dev/null; then
-    # Insert right after the [hooks] header.
-    awk -v line="$line" '
-      { print }
-      /^\[hooks\]/ && !done { print line; done=1 }
-    ' "$CONFIG_TOML" > "${CONFIG_TOML}.tmp"
-  else
-    { echo ""; echo "[hooks]"; echo "$line"; } >> "$CONFIG_TOML"
-    cp "$CONFIG_TOML" "${CONFIG_TOML}.tmp"
+
+  if ! grep -q "^\[${section}\]" "$CONFIG_TOML" 2>/dev/null; then
+    { echo ""; echo "[${section}]"; echo "${key} = [\"${value}\"]"; } >> "$CONFIG_TOML"
+    echo "  + ${key}"
+    return
   fi
-  mv "${CONFIG_TOML}.tmp" "$CONFIG_TOML"
+
+  python3 - "$CONFIG_TOML" "$section" "$key" "$value" <<'PY'
+import re, sys
+path, section, key, value = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+src = open(path).read()
+sec_re = re.compile(rf"(?m)^\[{re.escape(section)}\]\s*$")
+m = sec_re.search(src)
+assert m, f"[{section}] header vanished"
+# Bounds of the section body.
+nxt = re.search(r"(?m)^\[", src[m.end():])
+end = m.end() + nxt.start() if nxt else len(src)
+body = src[m.end():end]
+key_re = re.compile(rf"(?m)^{re.escape(key)}\s*=\s*(.+)$")
+km = key_re.search(body)
+if not km:
+    newline = f"{key} = [\"{value}\"]\n"
+    body = newline + body
+else:
+    cur = km.group(1).strip()
+    if cur.startswith("["):
+        inner = cur[1:cur.rindex("]")].rstrip().rstrip(",")
+        new = f'{key} = [{inner}, "{value}"]'
+    else:
+        new = f'{key} = [{cur}, "{value}"]'
+    body = body[:km.start()] + new + "\n" + body[km.end():]
+open(path, "w").write(src[:m.end()] + body + src[end:])
+PY
   echo "  + ${key}"
+}
+
+ensure_hook_entry() {
+  ensure_array_entry "hooks" "$1" "$2"
 }
 
 # Append `key = [value]` under [prompt], creating the section if needed.
 ensure_prompt_entry() {
-  local key="$1" value="$2" line
-  line="${key} = [\"${value}\"]"
-  if toml_has_line "$line"; then
-    echo "  = ${key} already registered, skipping"
-    return
-  fi
-  if grep -q '^\[prompt\]' "$CONFIG_TOML" 2>/dev/null; then
-    awk -v line="$line" '
-      { print }
-      /^\[prompt\]/ && !done { print line; done=1 }
-    ' "$CONFIG_TOML" > "${CONFIG_TOML}.tmp"
-  else
-    { echo ""; echo "[prompt]"; echo "$line"; } >> "$CONFIG_TOML"
-    cp "$CONFIG_TOML" "${CONFIG_TOML}.tmp"
-  fi
-  mv "${CONFIG_TOML}.tmp" "$CONFIG_TOML"
-  echo "  + ${key}"
+  ensure_array_entry "prompt" "$1" "$2"
 }
 
 remove_lines() {
