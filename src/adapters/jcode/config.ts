@@ -10,10 +10,10 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import type { ResolvedConfig } from "../../core/config-types.js";
 import {
   defaultConfigPath as opencodeDefaultConfigPath,
   loadConfig as loadOpencodeConfig,
-  type ResolvedConfig,
 } from "../opencode/config.js";
 
 export function jcodeConfigPath(): string {

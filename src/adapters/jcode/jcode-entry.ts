@@ -29,6 +29,7 @@ import { healthCheck } from "../opencode/client.js";
 import { onSessionCreated } from "../opencode/hooks/session-created.js";
 import { onFileEdited } from "../opencode/hooks/file-edited.js";
 import { onTodowrite, dropSessionState } from "../opencode/hooks/todowrite.js";
+import type { TodoEntry } from "../../core/types.js";
 import { onSessionStatus } from "../opencode/hooks/session-idle.js";
 
 const DEBUG = process.env.OH_AM_DEBUG === "1";
@@ -70,15 +71,21 @@ async function readStdinJson(): Promise<ToolInput | null> {
 }
 
 async function readAllStdin(): Promise<string> {
+  // Bun global is not typed in this repo (tsconfig types: ["node"]); access
+  // it defensively so tsc stays clean and non-Bun runtimes degrade to empty.
+  const b = (globalThis as Record<string, unknown>).Bun as
+    | { stdin: { stream(): unknown } }
+    | undefined;
+  if (!b) return "";
   try {
-    return await new Response(Bun.stdin.stream()).text();
+    return await new Response(b.stdin.stream() as ReadableStream).text();
   } catch {
     return "";
   }
 }
 
 /** Map jcode todo-tool priority (number or string) onto oh-am's high/medium/low. */
-function normalizePriority(priority: string | number | undefined): "high" | "medium" | "low" {
+function normalizePriority(priority: string | number | undefined): TodoEntry["priority"] {
   if (typeof priority === "number") {
     if (priority >= 8) return "high";
     if (priority >= 5) return "medium";
@@ -100,7 +107,7 @@ function normalizePriority(priority: string | number | undefined): "high" | "med
   }
 }
 
-function normalizeStatus(status: string | undefined): string {
+function normalizeStatus(status: string | undefined): TodoEntry["status"] {
   switch ((status ?? "").toLowerCase()) {
     case "in_progress":
     case "in-progress":
