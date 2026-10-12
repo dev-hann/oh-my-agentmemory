@@ -31,6 +31,7 @@ import { onFileEdited } from "../opencode/hooks/file-edited.js";
 import { onTodowrite, dropSessionState } from "../opencode/hooks/todowrite.js";
 import type { TodoEntry } from "../../core/types.js";
 import { onSessionEnd } from "../opencode/hooks/session-idle.js";
+import { maybeRunGcAdapter } from "../opencode/hooks/session-gc.js";
 
 const DEBUG = process.env.OH_AM_DEBUG === "1";
 
@@ -189,6 +190,10 @@ async function main(): Promise<void> {
   switch (event) {
     case "session_start":
       await onSessionCreated({ sessionId, cwd, project: cwd });
+      // Daily shared-GC trigger: throttled in core (24h marker file at
+      // ~/.config/oh-am/gc-last-run). Fire-and-forget — the hook process
+      // exiting early is harmless; the next day's session retries.
+      void maybeRunGcAdapter(loadConfig()).catch(() => {});
       break;
     case "post_tool":
       await handlePostTool(sessionId, cwd);

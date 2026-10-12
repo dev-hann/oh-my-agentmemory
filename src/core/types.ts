@@ -35,6 +35,9 @@ export interface Action {
   status: ActionStatus;
   priority?: number;
   tags?: string[];
+  /** Server timestamps used by the GC to detect stale actives. */
+  updatedAt?: string;
+  createdAt?: string;
 }
 
 /** Filter for `listActions`. All fields optional. */

@@ -394,6 +394,11 @@ export async function endSession(sessionId: string): Promise<boolean> {
   return postVoid("/session/end", { sessionId }, 8000);
 }
 
+/** Server route: POST /migrate — one-step data migrations (e.g. project backfill). */
+export async function migrateStep(step: string): Promise<boolean> {
+  return postVoid("/migrate", { step }, 30000);
+}
+
 export async function restartSession(
   sessionId: string,
   project: string | null,
